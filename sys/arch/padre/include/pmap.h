@@ -51,8 +51,6 @@ struct pmap {
 
 void	pmap_bootstrap(vaddr_t);
 
-extern vaddr_t pmap_tlb_lastva;
-
 #endif /* !_LOCORE */
 
 #endif /* _PADRE_PMAP_H_ */

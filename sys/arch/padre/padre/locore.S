@@ -4,8 +4,8 @@
  * Entry and trap table for NetBSD/padre. padre_go.ko enters the first byte of
  * the image with traps off and the MMU's kernel direct map active.
  *
- * Only supervisor mode exists so far. Window traps, interrupts, thread
- * switches and data misses in the translated kernel window are handled;
+ * Only supervisor mode exists so far. Window traps, interrupts and thread
+ * switches are handled;
  * every other trap prints
  * "TRAP <tbr> <pc> <npc> <dfsr> <ifsr> <dfaddr>" by polling, then stops. The
  * interrupted stack is used for interrupts because no user mode can be
@@ -16,12 +16,10 @@
 
 #include <machine/param.h>
 #include <machine/psl.h>
-#include <machine/pmap.h>
 
 #define	PSR_BOOT	(PSR_PIL | PSR_S | PSR_PS)
 #define	UART0		0x60000060
 #define	ASI_MMU		0x10
-#define	ASI_TLBPROBE	0x11
 #define	MMU_DFSR	0x10
 #define	MMU_IFSR	0x14
 #define	MMU_DFADDR	0x18
@@ -34,8 +32,6 @@
 
 #define	TRAP(h)		sethi %hi(h), %l0; jmp %l0 + %lo(h); nop; nop
 #define	BAD		TRAP(bad_trap)
-#define	DFAULT		rd %psr, %l0; sethi %hi(data_fault), %l3; \
-			jmp %l3 + %lo(data_fault); nop
 #define	IRQ		rd %psr, %l0; sethi %hi(irq_entry), %l3; \
 			jmp %l3 + %lo(irq_entry); nop
 
@@ -69,11 +65,7 @@ trapbase:
 	.rept	15			/* tt 0x11-0x1f: interrupt levels 1-15 */
 	IRQ
 	.endr
-	.rept	12			/* tt 0x20-0x2b */
-	BAD
-	.endr
-	DFAULT				/* tt 0x2c: data MMU miss */
-	.rept	211			/* tt 0x2d-0xff */
+	.rept	224			/* tt 0x20-0xff */
 	BAD
 	.endr
 
@@ -166,45 +158,6 @@ window_underflow:
 	LOAD_WINDOW
 	save
 	save
-	jmp	%l1
-	 rett	%l2
-
-/*
- * Data MMU miss. Load a valid PTE of the translated kernel window into the TLB
- * and retry. A second miss on the same address means the load did not help,
- * and goes to bad_trap rather than looping. DFSR is read last because the read
- * clears it and bad_trap reports it.
- *
- * Traps are off here and a trap would reset, so nothing that runs with traps
- * off, such as the window handlers, may touch this window.
- */
-data_fault:
-	mov	MMU_DFADDR, %l4
-	lda	[%l4] ASI_MMU, %l6
-	sethi	%hi(KVA_START), %l4
-	cmp	%l6, %l4
-	blu	bad_trap
-	 nop
-	srl	%l6, PGSHIFT, %l6
-	sll	%l6, PGSHIFT, %l6
-	sub	%l6, %l4, %l5
-	srl	%l5, PGSHIFT - 2, %l5
-	set	PMAP_PT_VA, %l4
-	ld	[%l4 + %l5], %l5
-	btst	1, %l5
-	be	bad_trap
-	 nop
-	set	pmap_tlb_lastva, %l4
-	ld	[%l4], %l7
-	cmp	%l7, %l6
-	be	bad_trap
-	 nop
-	st	%l6, [%l4]
-	mov	MMU_DFSR, %l4
-	lda	[%l4] ASI_MMU, %g0
-	sta	%l5, [%l6] ASI_TLBPROBE
-	wr	%l0, 0, %psr
-	PAUSE
 	jmp	%l1
 	 rett	%l2
 

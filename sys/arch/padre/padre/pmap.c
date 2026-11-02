@@ -40,8 +40,6 @@ __KERNEL_RCSID(0, "$NetBSD$");
 static struct pmap kernel_pmap_store;
 struct pmap * const kernel_pmap_ptr = &kernel_pmap_store;
 
-vaddr_t pmap_tlb_lastva;	/* last address data_fault loaded */
-
 static uint32_t *kva_pt;
 static vaddr_t virtual_avail, virtual_end;
 
@@ -54,18 +52,16 @@ kvtopte(vaddr_t va)
 }
 
 /*
- * A store to ASI_TLBPROBE writes its value into the TLB entry for that page,
- * as Linux does in its vmalloc fault path; zero invalidates. Measured: storing
- * zero after a PTE update left the page faulting, so a page goes in with its
- * PTE, and locore's data_fault reloads pages that drop out of the TLB.
+ * A store to ASI_TLBPROBE writes the PTE of that address in the current tables
+ * and drops the page from both TLBs. Measured with hw/probe/mmutest.c. Misses
+ * are refilled by hardware, which also keeps A and D in the table.
  */
 static inline void
-tlb_load_page(vaddr_t va, uint32_t pte)
+pte_store(vaddr_t va, uint32_t pte)
 {
 
 	__asm volatile("sta %0, [%1] %2" : :
 	    "r" (pte), "r" (va & ~PAGE_MASK), "n" (ASI_TLBPROBE));
-	pmap_tlb_lastva = 0;
 }
 
 void
@@ -144,18 +140,15 @@ pmap_kenter_pa(vaddr_t va, paddr_t pa, vm_prot_t prot, u_int flags)
 
 	if (prot & VM_PROT_WRITE)
 		pte |= PTE_W;
-	*kvtopte(va) = pte;
-	tlb_load_page(va, pte);
+	pte_store(va, pte);
 }
 
 void
 pmap_kremove(vaddr_t va, vsize_t len)
 {
 
-	for (; len != 0; va += PAGE_SIZE, len -= PAGE_SIZE) {
-		*kvtopte(va) = 0;
-		tlb_load_page(va, 0);
-	}
+	for (; len != 0; va += PAGE_SIZE, len -= PAGE_SIZE)
+		pte_store(va, 0);
 }
 
 int
@@ -181,14 +174,13 @@ pmap_protect(pmap_t pm, vaddr_t sva, vaddr_t eva, vm_prot_t prot)
 
 	KASSERT(pm == pmap_kernel());
 	for (; sva < eva; sva += PAGE_SIZE) {
-		uint32_t *pte = kvtopte(sva);
+		uint32_t pte = *kvtopte(sva) & ~(PTE_W | PTE_X);
 
-		*pte &= ~(PTE_W | PTE_X);
 		if (prot & VM_PROT_WRITE)
-			*pte |= PTE_W;
+			pte |= PTE_W;
 		if (prot & VM_PROT_EXECUTE)
-			*pte |= PTE_X;
-		tlb_load_page(sva, *pte);
+			pte |= PTE_X;
+		pte_store(sva, pte);
 	}
 }
 
