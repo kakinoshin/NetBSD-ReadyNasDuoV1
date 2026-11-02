@@ -59,7 +59,12 @@ mmu_read(uint32_t reg)
 static void
 windows_fatal(struct lwp *l)
 {
+	struct trapframe * const tf = l->l_md.md_tf;
+	struct pcb * const pcb = lwp_getpcb(l);
 
+	printf("pid %d (%s): bad user stack pc %#x npc %#x sp %#x fp %#x "
+	    "uw %d\n", l->l_proc->p_pid, l->l_proc->p_comm, tf->tf_pc,
+	    tf->tf_npc, tf->tf_out[6], pcb->pcb_rw[0].rw_in[6], pcb->pcb_uw);
 	mutex_enter(l->l_proc->p_lock);
 	sigexit(l, SIGSEGV);
 }
@@ -179,6 +184,8 @@ trap_fault(struct lwp *l, u_int tt, struct trapframe *tf, vaddr_t va,
 	if (!user) {
 		if (onfault == NULL)
 			trap_panic(tt, tf, va, fsr);
+		printf("user access fault: pc %#x va %#lx fsr %#x error %d\n",
+		    tf->tf_pc, va, fsr, error);
 		tf->tf_pc = (int)onfault;
 		tf->tf_npc = tf->tf_pc + 4;
 		return;
@@ -187,8 +194,12 @@ trap_fault(struct lwp *l, u_int tt, struct trapframe *tf, vaddr_t va,
 		printf("pid %d (%s): out of swap\n", l->l_proc->p_pid,
 		    l->l_proc->p_comm);
 		trap_signal(l, SIGKILL, SI_NOINFO, va, tt);
-	} else
+	} else {
+		printf("pid %d (%s): segv tt %#x pc %#x npc %#x va %#lx fsr %#x "
+		    "error %d\n", l->l_proc->p_pid, l->l_proc->p_comm, tt,
+		    tf->tf_pc, tf->tf_npc, va, fsr, error);
 		trap_signal(l, SIGSEGV, SEGV_MAPERR, va, tt);
+	}
 }
 
 static int

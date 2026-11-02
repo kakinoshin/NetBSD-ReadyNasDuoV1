@@ -106,7 +106,7 @@ npfext_route_param(nl_ext_t *ext, const char *param, const char *val)
         case PARAM_INET4:
             if (inet_pton(AF_INET, val, &addr) != 1) {
                 warn("Invalid IPv4 address `%s'", val);
-                return EINVAL;:q!
+                return EINVAL;
             }
             npf_ext_param_binary(ext, name, &addr, sizeof(struct in_addr));
             break;

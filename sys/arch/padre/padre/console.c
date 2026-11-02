@@ -12,9 +12,9 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include <sys/systm.h>
 #include <sys/conf.h>
 
-#include <sys/callout.h>
 #include <sys/conf.h>
 #include <sys/fcntl.h>
+#include <sys/intr.h>
 #include <sys/kauth.h>
 #include <sys/proc.h>
 #include <sys/tty.h>
@@ -23,6 +23,8 @@ __KERNEL_RCSID(0, "$NetBSD$");
 
 #define	UART_DATA	(*(volatile uint32_t *)0x60000060)
 #define	UART_STAT	(*(volatile uint32_t *)0x60000064)
+#define	UART_CTRL	(*(volatile uint32_t *)0x60000068)
+#define	UART_CTRL_RI	0x4
 #define	UART_STAT_DR	0x1
 #define	UART_STAT_TH	0x4
 
@@ -55,9 +57,8 @@ padre_cnpollc(dev_t dev, int on)
 void	pconsattach(int);
 
 static struct tty *pcons_tty;
-static callout_t pcons_ch;
 
-static void	pcons_poll(void *);
+static int	pcons_intr(void *);
 static void	pcons_start(struct tty *);
 static int	pcons_param(struct tty *, struct termios *);
 
@@ -78,19 +79,20 @@ consinit(void)
 }
 
 /*
- * The same UART as a tty. Output is polled and input is polled from a callout,
- * until the interrupt line of the UART is known.
+ * The same UART as a tty. Output is polled; input takes the receive interrupt
+ * because the UART holds a single character.
  */
 void
 pconsattach(int n)
 {
 
-	callout_init(&pcons_ch, 0);
-	callout_setfunc(&pcons_ch, pcons_poll, NULL);
 	pcons_tty = tty_alloc();
 	tty_attach(pcons_tty);
 	pcons_tty->t_oproc = pcons_start;
 	pcons_tty->t_param = pcons_param;
+	UART_STAT = 0xff;
+	padre_intr_establish(IRQ_UART0, IPL_TTY, pcons_intr, pcons_tty);
+	UART_CTRL |= UART_CTRL_RI;
 }
 
 static int
@@ -117,18 +119,21 @@ pcons_start(struct tty *tp)
 	splx(s);
 }
 
-static void
-pcons_poll(void *arg)
+static int
+pcons_intr(void *arg)
 {
-	struct tty * const tp = pcons_tty;
+	struct tty * const tp = arg;
+	int n;
 
-	while ((UART_STAT & UART_STAT_DR) != 0) {
+	/* Writing the status register clears its overrun and error flags. */
+	for (n = 0; n < 256 && (UART_STAT & UART_STAT_DR) != 0; n++) {
 		const int c = UART_DATA & 0xff;
 
+		UART_STAT = 0xff;
 		if (tp->t_state & TS_ISOPEN)
 			(*tp->t_linesw->l_rint)(c, tp);
 	}
-	callout_schedule(&pcons_ch, 2);
+	return 1;
 }
 
 static int
@@ -150,7 +155,6 @@ pcons_open(dev_t dev, int flag, int mode, struct lwp *l)
 		tp->t_ispeed = tp->t_ospeed = 9600;
 		ttsetwater(tp);
 		tp->t_state |= TS_CARR_ON;
-		callout_schedule(&pcons_ch, 2);
 	}
 	mutex_spin_exit(&tty_lock);
 	error = ttyopen(tp, 0, flag & O_NONBLOCK);

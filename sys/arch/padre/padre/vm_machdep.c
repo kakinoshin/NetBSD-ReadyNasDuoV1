@@ -19,8 +19,12 @@ void	lwp_trampoline(void);
 
 /*
  * Build a stack that cpu_switchto() can return through into lwp_trampoline,
- * below a copy of the parent's trapframe at the top of the uarea. The child
- * reloads its first user window from the stack, so the parent's go there.
+ * below a copy of the parent's trapframe at the top of the uarea.
+ *
+ * A forked child takes a copy of the parent's saved windows. They cannot go to
+ * the stack first: the address space is already copied, so a write from here
+ * reaches only the parent's page. An LWP or a child on a new stack starts with
+ * no windows and reloads from its stack.
  */
 void
 cpu_lwp_fork(struct lwp *l1, struct lwp *l2, void *stack, size_t stacksize,
@@ -32,9 +36,13 @@ cpu_lwp_fork(struct lwp *l1, struct lwp *l2, void *stack, size_t stacksize,
 	struct rwindow * const rw = (struct rwindow *)
 	    ((char *)tf - sizeof(struct frame));
 
-	if (l1 == curlwp)
-		windows_flush(l1);
 	memset(pcb, 0, sizeof(*pcb));
+	if (l1 == curlwp && l1->l_proc != l2->l_proc && stack == NULL) {
+		const struct pcb * const pcb1 = lwp_getpcb(l1);
+
+		pcb->pcb_nsaved = pcb1->pcb_nsaved;
+		memcpy(pcb->pcb_rw, pcb1->pcb_rw, sizeof(pcb->pcb_rw));
+	}
 	memset(rw, 0, sizeof(struct frame));
 	*tf = *l1->l_md.md_tf;
 	l2->l_md.md_tf = tf;

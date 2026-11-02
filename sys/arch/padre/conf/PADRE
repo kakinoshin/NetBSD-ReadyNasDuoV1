@@ -13,7 +13,7 @@ options 	HZ=100
 # Root file system from tools/mkroot.sh, placed in the kernel by build-kernel.sh.
 options 	MEMORY_DISK_HOOKS
 options 	MEMORY_DISK_IS_ROOT
-options 	MEMORY_DISK_ROOT_SIZE=2048
+options 	MEMORY_DISK_ROOT_SIZE=32768
 
 file-system	FFS
 

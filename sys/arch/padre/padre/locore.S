@@ -198,7 +198,6 @@ trap_common:
 	std	%i2, [%l5 + TF_OUT + 2*4]
 	std	%i4, [%l5 + TF_OUT + 4*4]
 	std	%i6, [%l5 + TF_OUT + 6*4]
-	sub	%l5, CCFSZ, %sp
 
 	add	%l4, PCB_RW, %g1
 	rd	%wim, %g2
@@ -226,6 +225,12 @@ trap_common:
 2:	wr	%g5, 0, %psr
 	PAUSE
 	st	%g3, [%l4 + PCB_NSAVED]
+
+	/*
+	 * Not before the loop: when this window was the invalid one, its %sp
+	 * is the %fp of the oldest user window.
+	 */
+	sub	%l5, CCFSZ, %sp
 
 	/* The kernel owns all windows down from here to the user's. */
 	and	%l0, PSR_CWP, %g4
