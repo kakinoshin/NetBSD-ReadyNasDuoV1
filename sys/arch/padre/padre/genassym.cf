@@ -2,6 +2,9 @@
 
 include <sys/param.h>
 include <sys/types.h>
+include <sys/cpu.h>
+include <sys/lwp.h>
+include <machine/pcb.h>
 include <machine/reg.h>
 
 define	TF_PSR		offsetof(struct trapframe, tf_psr)
@@ -11,3 +14,7 @@ define	TF_Y		offsetof(struct trapframe, tf_y)
 define	TF_GLOBAL	offsetof(struct trapframe, tf_global)
 define	TF_OUT		offsetof(struct trapframe, tf_out)
 define	TF_SIZE		sizeof(struct trapframe)
+define	L_PCB		offsetof(struct lwp, l_addr)
+define	PCB_SP		offsetof(struct pcb, pcb_sp)
+define	PCB_PC		offsetof(struct pcb, pcb_pc)
+define	CI_CURLWP	offsetof(struct cpu_info, ci_curlwp)

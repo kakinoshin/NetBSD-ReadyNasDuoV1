@@ -15,6 +15,7 @@ __KERNEL_RCSID(0, "$NetBSD$");
 
 #include <sys/param.h>
 #include <sys/systm.h>
+#include <sys/kmem.h>
 #include <sys/proc.h>
 
 #include <uvm/uvm.h>
@@ -245,12 +246,23 @@ pmap_deactivate(struct lwp *l)
 {
 }
 
-/* Only the kernel pmap exists, and uvm takes references to it for submaps. */
+/*
+ * User pmaps are empty so far: start_init() needs a vmspace to exist before it
+ * runs, and pmap_enter() still refuses anything but the kernel pmap.
+ */
+pmap_t
+pmap_create(void)
+{
+	pmap_t pm = kmem_zalloc(sizeof(*pm), KM_SLEEP);
+
+	pm->pm_refcount = 1;
+	return pm;
+}
+
 void
 pmap_reference(pmap_t pm)
 {
 
-	KASSERT(pm == pmap_kernel());
 	pm->pm_refcount++;
 }
 
@@ -258,18 +270,13 @@ void
 pmap_destroy(pmap_t pm)
 {
 
-	KASSERT(pm == pmap_kernel());
-	pm->pm_refcount--;
+	if (--pm->pm_refcount == 0) {
+		KASSERT(pm != pmap_kernel());
+		kmem_free(pm, sizeof(*pm));
+	}
 }
 
 /* The rest needs user mappings, which do not exist yet. */
-pmap_t
-pmap_create(void)
-{
-
-	panic("%s: not implemented", __func__);
-}
-
 bool
 pmap_remove_all(pmap_t pm)
 {

@@ -66,6 +66,9 @@ void	cpu_signotify(struct lwp *);
 
 #define	cpu_proc_fork(p1, p2)	/* nothing */
 
+void	*cpu_uarea_alloc(bool);
+bool	cpu_uarea_free(void *);
+
 #endif /* _KERNEL */
 
 #endif /* _PADRE_CPU_H_ */

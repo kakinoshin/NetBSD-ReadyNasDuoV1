@@ -26,7 +26,8 @@
 #define	KERNEND		0xffff0000
 #define	KVA_START	0xf8000000	/* translated kernel window */
 
-#define	USPACE		8192
+/* Interrupts run on the interrupted thread's stack. */
+#define	USPACE		16384
 
 #define	MSIZE		256		/* size of an mbuf */
 

@@ -4,8 +4,8 @@
  * Entry and trap table for NetBSD/padre. padre_go.ko enters the first byte of
  * the image with traps off and the MMU's kernel direct map active.
  *
- * Only supervisor mode exists so far. Window traps, interrupts and
- * data misses in the translated kernel window are handled;
+ * Only supervisor mode exists so far. Window traps, interrupts, thread
+ * switches and data misses in the translated kernel window are handled;
  * every other trap prints
  * "TRAP <tbr> <pc> <npc> <dfsr> <ifsr> <dfaddr>" by polling, then stops. The
  * interrupted stack is used for interrupts because no user mode can be
@@ -29,6 +29,7 @@
 #define	NWINDOWS	8
 #define	WIM_MASK	((1 << NWINDOWS) - 1)
 #define	CCFSZ		96
+#define	CURLWP		(cpu_info_store + CI_CURLWP)
 #define	PAUSE		nop; nop; nop
 
 #define	TRAP(h)		sethi %hi(h), %l0; jmp %l0 + %lo(h); nop; nop
@@ -279,6 +280,66 @@ irq_entry:
 	jmp	%l1
 	 rett	%l2
 
+/*
+ * lwp_t *cpu_switchto(lwp_t *old, lwp_t *new, bool returning)
+ *
+ * NWINDOWS - 2 saves push every older window to the stack and leave the window
+ * above this one invalid, whichever window was invalid before. This window then
+ * takes the identity of the new thread's cpu_switchto, or of the frame built by
+ * cpu_lwp_fork(), and the restore reloads its caller from the stack through the
+ * underflow trap. Nothing here depends on the CWP the thread last ran in.
+ *
+ * Only %sp and the return address of the caller have to survive: the rest of
+ * the out registers, the globals and %y are call-clobbered. Software spl stays
+ * as it is because mi_switch() runs at IPL_SCHED on both sides.
+ */
+	.globl	cpu_switchto
+cpu_switchto:
+	save	%sp, -CCFSZ, %sp
+	rd	%psr, %l0
+	or	%l0, PSR_PIL, %l1
+	wr	%l1, 0, %psr
+	PAUSE
+	.rept	NWINDOWS - 2
+	save	%sp, -CCFSZ, %sp
+	.endr
+	.rept	NWINDOWS - 2
+	restore
+	.endr
+
+	tst	%i0
+	be	1f
+	 nop
+	ld	[%i0 + L_PCB], %l2
+	st	%fp, [%l2 + PCB_SP]
+	st	%i7, [%l2 + PCB_PC]
+1:
+	ld	[%i1 + L_PCB], %l2
+	ld	[%l2 + PCB_SP], %fp
+	ld	[%l2 + PCB_PC], %i7
+	sub	%fp, CCFSZ, %sp
+	sethi	%hi(CURLWP), %l3
+	st	%i1, [%l3 + %lo(CURLWP)]
+	wr	%l0, 0, %psr
+	PAUSE
+	ret
+	 restore %i0, 0, %o0
+
+/*
+ * First code of a new thread, entered from cpu_switchto() with the old lwp in
+ * %o0. cpu_lwp_fork() left the function in %l0 and its argument in %l1.
+ */
+	.globl	lwp_trampoline
+lwp_trampoline:
+	sethi	%hi(CURLWP), %o1
+	call	lwp_startup
+	 ld	[%o1 + %lo(CURLWP)], %o1
+	call	%l0
+	 mov	%l1, %o0
+	set	lwp_returned, %o0
+	call	panic
+	 nop
+
 bad_trap:
 	set	UART0, %l3
 	TX('\r')
@@ -334,6 +395,10 @@ hex32:
 	 nop
 	retl
 	 nop
+
+	.section .rodata
+lwp_returned:
+	.asciz	"lwp_trampoline: no return to user mode yet"
 
 	.globl	lwp0uarea
 	.bss

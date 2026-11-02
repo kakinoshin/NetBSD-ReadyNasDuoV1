@@ -9,5 +9,6 @@
 #undef	__HAVE_RAS
 
 #define	__HAVE_CPU_DATA_FIRST
+#define	__HAVE_CPU_UAREA_ROUTINES
 
 #endif /* _PADRE_TYPES_H_ */

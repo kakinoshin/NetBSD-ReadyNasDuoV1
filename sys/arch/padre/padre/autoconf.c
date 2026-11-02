@@ -8,6 +8,8 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include <sys/conf.h>
 #include <sys/device.h>
 #include <sys/intr.h>
+#include <sys/kernel.h>
+#include <sys/proc.h>
 
 void
 cpu_configure(void)
@@ -21,6 +23,11 @@ cpu_configure(void)
 void
 cpu_rootconf(void)
 {
+	const int start = getticks();
+
+	/* Bring-up check of the timer, softints and thread switching. */
+	kpause("clktest", false, hz, NULL);
+	printf("clock: slept %d ticks\n", getticks() - start);
 
 	rootconf();
 }

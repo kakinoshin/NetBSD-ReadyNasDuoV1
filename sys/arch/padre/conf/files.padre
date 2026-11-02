@@ -20,6 +20,7 @@ file	arch/padre/padre/intr.c
 file	arch/padre/padre/machdep.c
 file	arch/padre/padre/pmap.c
 file	arch/padre/padre/stubs.c
+file	arch/padre/padre/vm_machdep.c
 file	dev/cons.c
 
 include "arch/padre/conf/majors.padre"
