@@ -18,6 +18,7 @@ file	arch/padre/padre/clock.c
 file	arch/padre/padre/console.c
 file	arch/padre/padre/intr.c
 file	arch/padre/padre/machdep.c
+file	arch/padre/padre/pcic.c
 file	arch/padre/padre/pmap.c
 file	arch/padre/padre/sig_machdep.c
 file	arch/padre/padre/stubs.c
