@@ -1,0 +1,25 @@
+#	$NetBSD$
+#
+# NetBSD/padre: Infrant IT3107 (ReadyNAS Duo v1).
+#
+
+maxpartitions	8
+maxusers	2 8 64
+
+# Referenced by the shared sparc headers. Nothing here selects a sun4 variant.
+defflag	opt_sparc_arch.h	SUN4 SUN4C SUN4M SUN4D SUN4U MSIIEP
+
+device	mainbus {}
+attach	mainbus at root
+file	arch/padre/padre/mainbus.c	mainbus
+
+file	arch/padre/padre/autoconf.c
+file	arch/padre/padre/clock.c
+file	arch/padre/padre/console.c
+file	arch/padre/padre/intr.c
+file	arch/padre/padre/machdep.c
+file	arch/padre/padre/pmap.c
+file	arch/padre/padre/stubs.c
+file	dev/cons.c
+
+include "arch/padre/conf/majors.padre"

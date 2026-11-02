@@ -1,0 +1,13 @@
+#	$NetBSD$
+
+include <sys/param.h>
+include <sys/types.h>
+include <machine/reg.h>
+
+define	TF_PSR		offsetof(struct trapframe, tf_psr)
+define	TF_PC		offsetof(struct trapframe, tf_pc)
+define	TF_NPC		offsetof(struct trapframe, tf_npc)
+define	TF_Y		offsetof(struct trapframe, tf_y)
+define	TF_GLOBAL	offsetof(struct trapframe, tf_global)
+define	TF_OUT		offsetof(struct trapframe, tf_out)
+define	TF_SIZE		sizeof(struct trapframe)

@@ -1,0 +1,17 @@
+#	$NetBSD$
+#
+# PADRE -- ReadyNAS Duo v1, started from RAIDiator by padre_go.ko.
+#
+
+include 	"arch/padre/conf/std.padre"
+
+maxusers	8
+
+options 	DIAGNOSTIC
+options 	HZ=100
+
+file-system	FFS
+
+config		netbsd	root on ? type ?
+
+mainbus0	at root

@@ -1,0 +1,47 @@
+/*	$NetBSD$	*/
+
+#undef sparc
+
+/*
+ * Kernel linker script for NetBSD/padre. padre_go.ko enters the flat image at
+ * its first byte, so the trap table in locore.S must come first.
+ */
+
+OUTPUT_FORMAT("elf32-sparc", "elf32-sparc", "elf32-sparc")
+OUTPUT_ARCH(sparc)
+ENTRY(_start)
+SECTIONS
+{
+  . = 0x90000000;
+  .text :
+  {
+    *locore.o(.text)
+    *(.text)
+    *(.text.*)
+    *(.stub)
+  } =0
+  .rodata : { *(.rodata) *(.rodata.*) }
+  _etext = .;
+  PROVIDE (etext = .);
+  . = ALIGN(0x1000);
+  kernel_data_start = .;
+  .data :
+  {
+    *(.data)
+    *(.data.*)
+  }
+  _edata = .;
+  PROVIDE (edata = .);
+  __bss_start = .;
+  .bss :
+  {
+    *(.dynbss)
+    *(.bss)
+    *(.bss.*)
+    *(COMMON)
+  }
+  . = ALIGN(8);
+  _end = .;
+  PROVIDE (end = .);
+  /DISCARD/ : { *(.eh_frame) *(.note.*) *(.comment) }
+}

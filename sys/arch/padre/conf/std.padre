@@ -1,0 +1,10 @@
+#	$NetBSD$
+#
+# Mandatory NetBSD/padre kernel options.
+#
+
+machine		padre		# Machine architecture; required by config(8)
+include		"conf/std"	# MI standard options
+
+options 	EXEC_ELF32	# execve(2) support for ELF binaries
+options 	EXEC_SCRIPT	# execve(2) support for scripts

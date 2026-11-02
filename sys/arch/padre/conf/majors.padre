@@ -1,0 +1,9 @@
+#	$NetBSD$
+#
+# Device majors for padre.
+#
+
+device-major	cons		char 0
+device-major	ctty		char 1
+device-major	mem		char 2
+device-major	swap		char 3	 block 0	vmswap
