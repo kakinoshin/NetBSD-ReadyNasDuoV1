@@ -10,5 +10,6 @@
 
 #define	__HAVE_CPU_DATA_FIRST
 #define	__HAVE_CPU_UAREA_ROUTINES
+#define	__HAVE_VM_PAGE_MD
 
 #endif /* _PADRE_TYPES_H_ */

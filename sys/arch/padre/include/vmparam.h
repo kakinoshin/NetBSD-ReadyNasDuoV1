@@ -40,6 +40,20 @@
 #define	VM_PHYSSEG_MAX		2
 #define	VM_PHYSSEG_STRAT	VM_PSTRAT_BSEARCH
 
+struct pv_entry;
+
+/* Accesses that hardware recorded in PTEs that are gone hold in mdpg_attrs. */
+struct vm_page_md {
+	struct pv_entry	*mdpg_pvh;
+	u_int		mdpg_attrs;
+};
+
+#define	VM_MDPAGE_INIT(pg)						\
+do {									\
+	(pg)->mdpage.mdpg_pvh = NULL;					\
+	(pg)->mdpage.mdpg_attrs = 0;					\
+} while (0)
+
 #define	VM_NFREELIST		1
 #define	VM_FREELIST_DEFAULT	0
 

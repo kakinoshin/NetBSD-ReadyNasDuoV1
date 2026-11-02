@@ -11,6 +11,8 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include <sys/kernel.h>
 #include <sys/proc.h>
 
+#include <uvm/uvm_extern.h>
+
 void
 cpu_configure(void)
 {
@@ -28,6 +30,7 @@ cpu_rootconf(void)
 	/* Bring-up check of the timer, softints and thread switching. */
 	kpause("clktest", false, hz, NULL);
 	printf("clock: slept %d ticks\n", getticks() - start);
+	pmap_selftest();
 
 	rootconf();
 }

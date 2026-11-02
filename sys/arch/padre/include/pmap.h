@@ -41,6 +41,7 @@
 struct pmap {
 	u_int			pm_refcount;
 	uint32_t		*pm_pgd;
+	paddr_t			pm_pgd_pa;
 	struct pmap_statistics	pm_stats;
 };
 
@@ -50,6 +51,7 @@ struct pmap {
 #define	pmap_update(pm)			/* nothing */
 
 void	pmap_bootstrap(vaddr_t);
+void	pmap_selftest(void);
 
 #endif /* !_LOCORE */
 
