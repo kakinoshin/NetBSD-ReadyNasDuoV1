@@ -18,19 +18,31 @@ __KERNEL_RCSID(0, "$NetBSD$");
 void	lwp_trampoline(void);
 
 /*
- * Build a stack that cpu_switchto() can return through into lwp_trampoline.
- * Only kernel threads exist so far, so nothing is copied from l1.
+ * Build a stack that cpu_switchto() can return through into lwp_trampoline,
+ * below a copy of the parent's trapframe at the top of the uarea. The child
+ * reloads its first user window from the stack, so the parent's go there.
  */
 void
 cpu_lwp_fork(struct lwp *l1, struct lwp *l2, void *stack, size_t stacksize,
     void (*func)(void *), void *arg)
 {
 	struct pcb * const pcb = lwp_getpcb(l2);
+	struct trapframe * const tf = (struct trapframe *)
+	    (uvm_lwp_getuarea(l2) + USPACE - sizeof(struct trapframe));
 	struct rwindow * const rw = (struct rwindow *)
-	    (uvm_lwp_getuarea(l2) + USPACE - sizeof(struct frame));
+	    ((char *)tf - sizeof(struct frame));
 
+	if (l1 == curlwp)
+		windows_flush(l1);
 	memset(pcb, 0, sizeof(*pcb));
 	memset(rw, 0, sizeof(struct frame));
+	*tf = *l1->l_md.md_tf;
+	l2->l_md.md_tf = tf;
+	if (stack != NULL)
+		tf->tf_out[6] = (int)stack + stacksize;
+	tf->tf_psr &= ~PSR_C;
+	tf->tf_out[0] = 0;
+	tf->tf_out[1] = 1;
 	rw->rw_local[0] = (int)func;
 	rw->rw_local[1] = (int)arg;
 	pcb->pcb_sp = (int)rw;

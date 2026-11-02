@@ -36,6 +36,8 @@ padre_bootstrap(void)
 	ci->ci_self = ci;
 	ci->ci_curlwp = &lwp0;
 	ci->ci_onproc = &lwp0;
+	lwp0.l_md.md_tf = (struct trapframe *)
+	    (lwp0uarea + USPACE - sizeof(struct trapframe));
 	lwp0.l_cpu = ci;
 
 	/* Progress marks: printf is not usable until main() runs consinit(). */

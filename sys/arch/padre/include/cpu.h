@@ -66,6 +66,9 @@ void	cpu_signotify(struct lwp *);
 
 #define	cpu_proc_fork(p1, p2)	/* nothing */
 
+struct trapframe;
+
+void	windows_flush(struct lwp *);
 void	*cpu_uarea_alloc(bool);
 bool	cpu_uarea_free(void *);
 

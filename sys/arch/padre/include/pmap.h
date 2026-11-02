@@ -52,6 +52,7 @@ struct pmap {
 
 void	pmap_bootstrap(vaddr_t);
 void	pmap_selftest(void);
+void	pmap_icache_sync(paddr_t);
 
 #endif /* !_LOCORE */
 

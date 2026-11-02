@@ -19,8 +19,13 @@ file	arch/padre/padre/console.c
 file	arch/padre/padre/intr.c
 file	arch/padre/padre/machdep.c
 file	arch/padre/padre/pmap.c
+file	arch/padre/padre/sig_machdep.c
 file	arch/padre/padre/stubs.c
+file	arch/padre/padre/trap.c
 file	arch/padre/padre/vm_machdep.c
 file	dev/cons.c
+file	dev/md_root.c			memory_disk_hooks
+
+defpseudo pcons: tty
 
 include "arch/padre/conf/majors.padre"

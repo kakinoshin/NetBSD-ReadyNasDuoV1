@@ -10,8 +10,16 @@ maxusers	8
 options 	DIAGNOSTIC
 options 	HZ=100
 
+# Root file system from tools/mkroot.sh, placed in the kernel by build-kernel.sh.
+options 	MEMORY_DISK_HOOKS
+options 	MEMORY_DISK_IS_ROOT
+options 	MEMORY_DISK_ROOT_SIZE=2048
+
 file-system	FFS
 
 config		netbsd	root on ? type ?
 
 mainbus0	at root
+
+pseudo-device	md
+pseudo-device	pcons

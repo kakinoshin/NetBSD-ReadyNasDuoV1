@@ -263,10 +263,10 @@ pmap_remove_pte(pmap_t pm, vaddr_t va, uint32_t *ptep)
  * because nothing sets padre_cachefix: clean the page by probing it, then
  * invalidate the whole I-cache through the MBIST engine with the cache off.
  */
-static void
+void
 pmap_icache_sync(paddr_t pa)
 {
-	const vaddr_t va = PMAP_DIRECT_VA(pa), end = va + PAGE_SIZE;
+	const vaddr_t va = PMAP_DIRECT_VA(trunc_page(pa)), end = va + PAGE_SIZE;
 	const u_int psr = getpsr();
 	uint32_t dc, ic;
 	vaddr_t p;
