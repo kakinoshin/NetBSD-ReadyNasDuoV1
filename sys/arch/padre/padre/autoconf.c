@@ -13,8 +13,6 @@ __KERNEL_RCSID(0, "$NetBSD$");
 
 #include <uvm/uvm_extern.h>
 
-void	padre_pci_scan(void);
-
 void
 cpu_configure(void)
 {
@@ -33,7 +31,6 @@ cpu_rootconf(void)
 	kpause("clktest", false, hz, NULL);
 	printf("clock: slept %d ticks\n", getticks() - start);
 	pmap_selftest();
-	padre_pci_scan();
 
 	rootconf();
 }

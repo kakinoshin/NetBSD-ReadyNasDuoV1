@@ -299,6 +299,8 @@ pmap_kenter_pa(vaddr_t va, paddr_t pa, vm_prot_t prot, u_int flags)
 
 	if (prot & VM_PROT_WRITE)
 		pte |= PTE_W;
+	if (flags & PMAP_NOCACHE)
+		pte &= ~PTE_C;
 	pte_store(va, pte);
 }
 

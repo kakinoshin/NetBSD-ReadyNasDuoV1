@@ -37,6 +37,9 @@
 #define	VM_MIN_KERNEL_ADDRESS	((vaddr_t)0xf8000000)
 #define	VM_MAX_KERNEL_ADDRESS	((vaddr_t)0xffff0000)
 
+/* Kernel mappings of physio buffers. */
+#define	VM_PHYS_SIZE		(16 * 1024 * 1024)
+
 #define	VM_PHYSSEG_MAX		2
 #define	VM_PHYSSEG_STRAT	VM_PSTRAT_BSEARCH
 

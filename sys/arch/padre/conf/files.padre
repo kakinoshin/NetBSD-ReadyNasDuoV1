@@ -13,20 +13,46 @@ device	mainbus {}
 attach	mainbus at root
 file	arch/padre/padre/mainbus.c	mainbus
 
+device	pcic: pcibus
+attach	pcic at mainbus
+file	arch/padre/padre/pcic.c		pcic
+
 file	arch/padre/padre/autoconf.c
 file	arch/padre/padre/clock.c
 file	arch/padre/padre/console.c
 file	arch/padre/padre/intr.c
 file	arch/padre/padre/machdep.c
-file	arch/padre/padre/pcic.c
+file	arch/padre/padre/bus_dma.c
+file	arch/padre/padre/bus_space.c
 file	arch/padre/padre/pmap.c
 file	arch/padre/padre/sig_machdep.c
 file	arch/padre/padre/stubs.c
 file	arch/padre/padre/trap.c
+file	arch/padre/padre/fpu_emul.c
+
+# The core has no FPU: every FP instruction is emulated.
+file	arch/sparc/fpu/fpu.c
+file	arch/sparc/fpu/fpu_add.c
+file	arch/sparc/fpu/fpu_compare.c
+file	arch/sparc/fpu/fpu_div.c
+file	arch/sparc/fpu/fpu_explode.c
+file	arch/sparc/fpu/fpu_implode.c
+file	arch/sparc/fpu/fpu_mul.c
+file	arch/sparc/fpu/fpu_sqrt.c
+file	arch/sparc/fpu/fpu_subr.c
 file	arch/padre/padre/vm_machdep.c
 file	dev/cons.c
 file	dev/md_root.c			memory_disk_hooks
+file	kern/subr_disk_mbr.c		disk
 
 defpseudo pcons: tty
+
+include "dev/i2o/files.i2o"
+include "dev/pci/files.pci"
+include "dev/scsipi/files.scsipi"
+include "dev/ata/files.ata"
+include "dev/usb/files.usb"
+include "dev/ieee1394/files.ieee1394"
+include "dev/bluetooth/files.bluetooth"
 
 include "arch/padre/conf/majors.padre"

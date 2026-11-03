@@ -12,6 +12,7 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include <sys/systm.h>
 #include <sys/cpu.h>
 #include <sys/exec.h>
+#include <sys/kmem.h>
 #include <sys/lwp.h>
 #include <sys/proc.h>
 #include <sys/signal.h>
@@ -33,6 +34,10 @@ setregs(struct lwp *l, struct exec_package *pack, vaddr_t stack)
 	struct pcb * const pcb = lwp_getpcb(l);
 
 	l->l_proc->p_md.md_flags &= ~MDP_FIXALIGN;
+	if (l->l_md.md_fpstate != NULL) {
+		kmem_free(l->l_md.md_fpstate, sizeof(struct fpstate));
+		l->l_md.md_fpstate = NULL;
+	}
 	memset(tf, 0, sizeof(*tf));
 	tf->tf_global[1] = l->l_proc->p_psstrp;
 	tf->tf_pc = pack->ep_entry & ~3;

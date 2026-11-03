@@ -13,6 +13,7 @@ __KERNEL_RCSID(0, "$NetBSD$");
 
 #define	TM_CTRL		(*(volatile uint32_t *)0x60000040)
 #define	TM_PS		(*(volatile uint32_t *)0x60000044)
+#define	TM_CNTDIAG	(*(volatile uint32_t *)0x6000004c)	/* timer 1 count */
 #define	TM_TIMER1	(*(volatile uint32_t *)0x60000054)
 #define	TM_CTRL_STP	0x00001000
 #define	TM_CTRL_ENABLE	(0x20 | 0x200 | 0x2 | 0x2000) /* AUTO LOAD INTEN SEL */
@@ -21,8 +22,7 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #define	TM_PRESCALE	24
 #define	TM_RATE		50000
 
-/* Rough until there is a free-running counter to calibrate against. */
-#define	DELAY_LOOPS_US	100
+#define	TM_USEC_PER_COUNT	(1000000 / TM_RATE)
 
 static int
 clockintr(void *arg)
@@ -50,11 +50,22 @@ setstatclockrate(int newhz)
 {
 }
 
+/*
+ * Counts down timer 1, which Linux leaves running at the same rate, as its
+ * do_gettimeoffset() does. The count reloads at zero, once per tick.
+ */
 void
 delay(unsigned int us)
 {
-	volatile unsigned int n = us * DELAY_LOOPS_US;
+	const uint32_t period = TM_RATE / hz;
+	uint32_t last = TM_CNTDIAG, now, left;
 
-	while (n != 0)
-		n--;
+	left = (us + TM_USEC_PER_COUNT - 1) / TM_USEC_PER_COUNT + 1;
+	while (left > 0) {
+		now = TM_CNTDIAG;
+		if (now == last)
+			continue;
+		left -= MIN(left, (last + period - now) % period);
+		last = now;
+	}
 }

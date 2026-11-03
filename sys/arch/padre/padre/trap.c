@@ -46,6 +46,8 @@ __KERNEL_RCSID(0, "$NetBSD$");
 void	trap(u_int, struct trapframe *);
 void	trap_userret(struct trapframe *);
 void	windows_prepare(struct trapframe *);
+int	trap_reg(struct lwp *, struct trapframe *, u_int);
+void	fpu_emulate_user(struct lwp *, struct trapframe *);
 
 static inline uint32_t
 mmu_read(uint32_t reg)
@@ -202,7 +204,7 @@ trap_fault(struct lwp *l, u_int tt, struct trapframe *tf, vaddr_t va,
 	}
 }
 
-static int
+int
 trap_reg(struct lwp *l, struct trapframe *tf, u_int r)
 {
 	struct pcb * const pcb = lwp_getpcb(l);
@@ -372,6 +374,9 @@ trap(u_int tt, struct trapframe *tf)
 	case T_ILLINST:
 		if (!trap_flush(l, tf))
 			trap_signal(l, SIGILL, ILL_ILLOPC, tf->tf_pc, tt);
+		break;
+	case T_FPDISABLED:
+		fpu_emulate_user(l, tf);
 		break;
 	case T_PRIVINST:
 		trap_signal(l, SIGILL, ILL_PRVOPC, tf->tf_pc, tt);

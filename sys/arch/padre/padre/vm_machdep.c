@@ -5,6 +5,8 @@ __KERNEL_RCSID(0, "$NetBSD$");
 
 #include <sys/param.h>
 #include <sys/systm.h>
+#include <sys/kmem.h>
+#include <sys/buf.h>
 #include <sys/cpu.h>
 #include <sys/lwp.h>
 #include <sys/proc.h>
@@ -45,6 +47,13 @@ cpu_lwp_fork(struct lwp *l1, struct lwp *l2, void *stack, size_t stacksize,
 	}
 	memset(rw, 0, sizeof(struct frame));
 	*tf = *l1->l_md.md_tf;
+	l2->l_md.md_fpstate = NULL;
+	if (l1->l_md.md_fpstate != NULL) {
+		l2->l_md.md_fpstate = kmem_alloc(sizeof(struct fpstate),
+		    KM_SLEEP);
+		memcpy(l2->l_md.md_fpstate, l1->l_md.md_fpstate,
+		    sizeof(struct fpstate));
+	}
 	l2->l_md.md_tf = tf;
 	if (stack != NULL)
 		tf->tf_out[6] = (int)stack + stacksize;
@@ -66,6 +75,11 @@ cpu_lwp_free(struct lwp *l, int proc)
 void
 cpu_lwp_free2(struct lwp *l)
 {
+
+	if (l->l_md.md_fpstate != NULL) {
+		kmem_free(l->l_md.md_fpstate, sizeof(struct fpstate));
+		l->l_md.md_fpstate = NULL;
+	}
 }
 
 /*
@@ -94,4 +108,45 @@ cpu_uarea_free(void *va)
 	for (; pa < end; pa += PAGE_SIZE)
 		uvm_pagefree(PHYS_TO_VM_PAGE(pa));
 	return true;
+}
+
+/* Maps the user pages of a physio buffer into phys_map. */
+int
+vmapbuf(struct buf *bp, vsize_t len)
+{
+	struct pmap * const upmap = vm_map_pmap(&bp->b_proc->p_vmspace->vm_map);
+	vaddr_t faddr, taddr, off;
+	paddr_t pa;
+
+	KASSERT((bp->b_flags & B_PHYS) != 0);
+	bp->b_saveaddr = bp->b_data;
+	faddr = trunc_page((vaddr_t)bp->b_data);
+	off = (vaddr_t)bp->b_data - faddr;
+	len = round_page(off + len);
+	taddr = uvm_km_alloc(phys_map, len, 0, UVM_KMF_VAONLY | UVM_KMF_WAITVA);
+	bp->b_data = (void *)(taddr + off);
+	for (; len > 0; len -= PAGE_SIZE, faddr += PAGE_SIZE, taddr += PAGE_SIZE) {
+		if (!pmap_extract(upmap, faddr, &pa))
+			panic("%s: no page at %#lx", __func__, faddr);
+		pmap_enter(pmap_kernel(), taddr, pa, VM_PROT_READ | VM_PROT_WRITE,
+		    VM_PROT_READ | VM_PROT_WRITE | PMAP_WIRED);
+	}
+	pmap_update(pmap_kernel());
+	return 0;
+}
+
+void
+vunmapbuf(struct buf *bp, vsize_t len)
+{
+	vaddr_t addr, off;
+
+	KASSERT((bp->b_flags & B_PHYS) != 0);
+	addr = trunc_page((vaddr_t)bp->b_data);
+	off = (vaddr_t)bp->b_data - addr;
+	len = round_page(off + len);
+	pmap_remove(pmap_kernel(), addr, addr + len);
+	pmap_update(pmap_kernel());
+	uvm_km_free(phys_map, addr, len, UVM_KMF_VAONLY);
+	bp->b_data = bp->b_saveaddr;
+	bp->b_saveaddr = NULL;
 }

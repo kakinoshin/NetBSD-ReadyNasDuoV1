@@ -1,3 +1,27 @@
-/* $NetBSD$ */
+/*	$NetBSD$	*/
 
-#include <sparc/bus_funcs.h>
+#ifndef _PADRE_BUS_FUNCS_H_
+#define _PADRE_BUS_FUNCS_H_
+
+#define	bus_space_read_stream_1		bus_space_read_1
+#define	bus_space_read_stream_2		bus_space_read_2
+#define	bus_space_read_stream_4		bus_space_read_4
+#define	bus_space_write_stream_1	bus_space_write_1
+#define	bus_space_write_stream_2	bus_space_write_2
+#define	bus_space_write_stream_4	bus_space_write_4
+#define	bus_space_read_multi_stream_1	bus_space_read_multi_1
+#define	bus_space_read_multi_stream_2	bus_space_read_multi_2
+#define	bus_space_read_multi_stream_4	bus_space_read_multi_4
+#define	bus_space_write_multi_stream_1	bus_space_write_multi_1
+#define	bus_space_write_multi_stream_2	bus_space_write_multi_2
+#define	bus_space_write_multi_stream_4	bus_space_write_multi_4
+#define	bus_space_read_region_stream_1	bus_space_read_region_1
+#define	bus_space_read_region_stream_2	bus_space_read_region_2
+#define	bus_space_read_region_stream_4	bus_space_read_region_4
+#define	bus_space_write_region_stream_1	bus_space_write_region_1
+#define	bus_space_write_region_stream_2	bus_space_write_region_2
+#define	bus_space_write_region_stream_4	bus_space_write_region_4
+
+extern const struct padre_bus_dma_tag padre_bus_dma_tag;
+
+#endif /* _PADRE_BUS_FUNCS_H_ */

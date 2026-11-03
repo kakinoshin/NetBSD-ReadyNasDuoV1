@@ -19,6 +19,7 @@ mainbus_attach(device_t parent, device_t self, void *aux)
 {
 
 	aprint_normal("\n");
+	config_found(self, __UNCONST("pcic"), NULL, CFARGS_NONE);
 }
 
 CFATTACH_DECL_NEW(mainbus, 0, mainbus_match, mainbus_attach, NULL, NULL);

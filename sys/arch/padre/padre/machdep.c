@@ -59,8 +59,12 @@ void
 cpu_startup(void)
 {
 
+	vaddr_t minaddr = 0, maxaddr;
+
 	cpu_setmodel("Infrant IT3107");
 	banner();
+	phys_map = uvm_km_suballoc(kernel_map, &minaddr, &maxaddr,
+	    VM_PHYS_SIZE, 0, false, NULL);
 }
 
 /* There is only one system call path. */

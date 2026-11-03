@@ -9,3 +9,7 @@ device-major	mem		char 2
 device-major	swap		char 3	 block 0	vmswap
 device-major	pcons		char 4
 device-major	md		char 5	 block 1	md
+device-major	sd		char 6	 block 2	sd
+device-major	scsibus		char 7			scsibus
+device-major	usb		char 8			usb
+device-major	ugen		char 9			ugen
