@@ -17,6 +17,10 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include <sys/intr.h>
 #include <sys/kmem.h>
 
+#include <sys/lwp.h>
+#include <sys/proc.h>
+
+#include <machine/frame.h>
 #include <machine/reg.h>
 
 #define	INTC_REG(o)	(*(volatile uint32_t *)(0x60000000 + (o)))
@@ -42,6 +46,7 @@ static struct intrhand *intrhand[NIRQ];
 static int intr_ipl[NIRQ];
 static uint32_t ipl_mask_h[NIPL], ipl_mask_l[NIPL];
 u_int padre_intr_count[NIRQ];	/* bring-up statistics */
+struct trapframe *padre_intr_tf;	/* the latest interrupted frame */
 
 static inline void
 intc_setmask(int ipl)
@@ -157,6 +162,8 @@ padre_intr_dispatch(struct trapframe *tf)
 	int bit;
 
 	ci->ci_idepth++;
+	padre_intr_tf = tf;
+	padre_stack_check();
 
 	pend = INTC_CAUSE_H & ipl_mask_h[s];
 	INTC_CAUSE_H = pend;
@@ -175,4 +182,23 @@ padre_intr_dispatch(struct trapframe *tf)
 	ci->ci_cpl = s;
 	intc_setmask(s);
 	ci->ci_idepth--;
+}
+
+/* Bring-up: the state of the interrupted kernel, for hangs. */
+void
+padre_debug_dump(const char *why)
+{
+	struct cpu_info * const ci = curcpu();
+	struct lwp * const l = curlwp;
+	const struct trapframe * const tf = padre_intr_tf;
+
+	printf("\ndebug (%s): cpl %d idepth %d mtx_count %d lwp %d.%d (%s) "
+	    "stat %d syscalls %u\n", why, ci->ci_cpl, ci->ci_idepth,
+	    ci->ci_mtx_count, l->l_proc->p_pid, l->l_lid, l->l_proc->p_comm,
+	    l->l_stat, (u_int)ci->ci_data.cpu_nsyscall);
+	if (tf != NULL)
+		printf("debug: interrupted pc %#x npc %#x psr %#x o7 %#x\n",
+		    tf->tf_pc, tf->tf_npc, tf->tf_psr, tf->tf_out[7]);
+	printf("debug: irq 8 %u, 27 %u, 46 %u\n", padre_intr_count[8],
+	    padre_intr_count[27], padre_intr_count[46]);
 }

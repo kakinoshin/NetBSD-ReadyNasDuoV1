@@ -3,6 +3,8 @@
 #include <sys/cdefs.h>
 __KERNEL_RCSID(0, "$NetBSD$");
 
+#include "opt_padre.h"
+
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/cpu.h>
@@ -11,6 +13,7 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include <sys/lwp.h>
 #include <sys/proc.h>
 #include <sys/reboot.h>
+#include <sys/sysctl.h>
 
 #include <uvm/uvm_extern.h>
 
@@ -39,6 +42,9 @@ padre_bootstrap(void)
 	lwp0.l_md.md_tf = (struct trapframe *)
 	    (lwp0uarea + USPACE - sizeof(struct trapframe));
 	lwp0.l_cpu = ci;
+#ifdef PADRE_SINGLE_USER
+	boothowto |= RB_SINGLE;
+#endif
 
 	/* Progress marks: printf is not usable until main() runs consinit(). */
 	consinit();
@@ -65,6 +71,21 @@ cpu_startup(void)
 	banner();
 	phys_map = uvm_km_suballoc(kernel_map, &minaddr, &maxaddr,
 	    VM_PHYS_SIZE, 0, false, NULL);
+}
+
+/*
+ * Always 7: ld.elf_so swaps in libsparc_v8 with hardware multiply and divide
+ * for 8 and above, and the core cannot run those, see the port plan.
+ */
+SYSCTL_SETUP(sysctl_machdep_setup, "sysctl machdep subtree setup")
+{
+
+	sysctl_createv(clog, 0, NULL, NULL, CTLFLAG_PERMANENT,
+	    CTLTYPE_NODE, "machdep", NULL, NULL, 0, NULL, 0,
+	    CTL_MACHDEP, CTL_EOL);
+	sysctl_createv(clog, 0, NULL, NULL, CTLFLAG_PERMANENT | CTLFLAG_IMMEDIATE,
+	    CTLTYPE_INT, "cpu_arch", NULL, NULL, 7, NULL, 0,
+	    CTL_MACHDEP, CPU_ARCH, CTL_EOL);
 }
 
 /* There is only one system call path. */

@@ -177,11 +177,18 @@ fpu_emulate_user(struct lwp *l, struct trapframe *tf)
 		sig = fpu_one(l, tf, fs, ins);
 		if (sig < 0) {
 			/* Not FP: the first instruction trapped, so it must be. */
-			if (n == 0)
+			if (n == 0) {
+				printf("pid %d (%s): not an FP insn %08x at pc %#x\n",
+				    l->l_proc->p_pid, l->l_proc->p_comm, ins.i_int,
+				    tf->tf_pc);
 				fpu_signal(l, tf, SIGILL, ILL_ILLOPC);
+			}
 			return;
 		}
 		if (sig != 0) {
+			printf("pid %d (%s): FP insn %08x at pc %#x: signal %d\n",
+			    l->l_proc->p_pid, l->l_proc->p_comm, ins.i_int,
+			    tf->tf_pc, sig);
 			fpu_signal(l, tf, sig, sig == SIGFPE ? FPE_FLTINV :
 			    sig == SIGBUS ? BUS_ADRALN : 0);
 			return;

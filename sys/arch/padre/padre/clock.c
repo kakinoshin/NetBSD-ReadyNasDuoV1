@@ -30,7 +30,18 @@ clockintr(void *arg)
 	struct trapframe *tf = arg;
 	struct clockframe cf = { .pc = tf->tf_pc, .psr = tf->tf_psr };
 
+	static uint64_t lastcount;
+	static u_int stalled;
+	const uint64_t count = curcpu()->ci_data.cpu_nsyscall;
+
 	hardclock(&cf);
+
+	/* Bring-up watchdog: report once when no system call ran for 30 s. */
+	if (count != lastcount) {
+		lastcount = count;
+		stalled = 0;
+	} else if (++stalled == 30 * hz)
+		padre_debug_dump("no syscall for 30s");
 	return 1;
 }
 

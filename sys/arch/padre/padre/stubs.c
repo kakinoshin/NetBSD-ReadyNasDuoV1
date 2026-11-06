@@ -24,8 +24,3 @@ name(void)								\
 STUB(cpu_coredump)
 STUB(mm_md_physacc)
 STUB(mm_md_readwrite)
-STUB(process_read_fpregs)
-STUB(process_read_regs)
-STUB(process_set_pc)
-STUB(process_write_fpregs)
-STUB(process_write_regs)

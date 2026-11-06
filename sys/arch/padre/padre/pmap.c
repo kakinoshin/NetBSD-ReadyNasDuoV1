@@ -263,22 +263,15 @@ pmap_remove_pte(pmap_t pm, vaddr_t va, uint32_t *ptep)
  * because nothing sets padre_cachefix: clean the page by probing it, then
  * invalidate the whole I-cache through the MBIST engine with the cache off.
  */
-void
-pmap_icache_sync(paddr_t pa)
+/* Invalidates the whole I-cache through the MBIST engine with the cache off. */
+static void
+icache_invalidate(void)
 {
-	const vaddr_t va = PMAP_DIRECT_VA(trunc_page(pa)), end = va + PAGE_SIZE;
 	const u_int psr = getpsr();
-	uint32_t dc, ic;
-	vaddr_t p;
+	uint32_t ic;
 
 	setpsr(psr | PSR_PIL);
-	dc = lda(CMU_CTRL, ASI_DCMU);
 	ic = lda(CMU_CTRL, ASI_ICMU);
-	sta(CMU_CTRL, ASI_DCMU, dc | (DCMU_PROBE_CLEAN << 4));
-	for (p = va; p < end; p += 16)
-		(void)*(volatile uint32_t *)p;
-	sta(CMU_CTRL, ASI_DCMU, dc);
-
 	sta(CMU_CTRL, ASI_ICMU, 0);
 	__asm volatile("nop; nop; nop");
 	MBIST_ADDR = 0x3ff;
@@ -290,6 +283,51 @@ pmap_icache_sync(paddr_t pa)
 	sta(CMU_CTRL, ASI_ICMU, ic);
 	__asm volatile("nop; nop; nop");
 	setpsr(psr);
+}
+
+/* Writes the dirty D-cache lines of a page back to memory, by probing it. */
+static void
+dcache_clean_page(paddr_t pa)
+{
+	const vaddr_t va = PMAP_DIRECT_VA(trunc_page(pa)), end = va + PAGE_SIZE;
+	const u_int psr = getpsr();
+	uint32_t dc;
+	vaddr_t p;
+
+	setpsr(psr | PSR_PIL);
+	dc = lda(CMU_CTRL, ASI_DCMU);
+	sta(CMU_CTRL, ASI_DCMU, dc | (DCMU_PROBE_CLEAN << 4));
+	for (p = va; p < end; p += 16)
+		(void)*(volatile uint32_t *)p;
+	sta(CMU_CTRL, ASI_DCMU, dc);
+	setpsr(psr);
+}
+
+void
+pmap_icache_sync(paddr_t pa)
+{
+
+	dcache_clean_page(pa);
+	icache_invalidate();
+}
+
+/*
+ * Code that the kernel wrote into a process, as exec's vmcmd_readvn does, is
+ * still in the D-cache, and instructions are fetched from memory. Measured:
+ * without this, ld.elf_so ran zeros.
+ */
+void
+pmap_procwr(struct proc *p, vaddr_t va, size_t len)
+{
+	pmap_t const pm = p->p_vmspace->vm_map.pmap;
+	const vaddr_t end = round_page(va + len);
+	paddr_t pa;
+
+	for (va = trunc_page(va); va < end; va += PAGE_SIZE) {
+		if (pmap_extract(pm, va, &pa))
+			dcache_clean_page(pa);
+	}
+	icache_invalidate();
 }
 
 void
@@ -634,6 +672,8 @@ pmap_is_referenced(struct vm_page *pg)
  * Bring-up check, from supervisor mode: a user pmap maps a page, hardware
  * records the accesses, and the pv list finds them.
  */
+static void	pmap_nocache_test(void);
+
 void
 pmap_selftest(void)
 {
@@ -668,4 +708,39 @@ pmap_selftest(void)
 	pmap_destroy(pm);
 	uvm_pagefree(pg);
 	printf("pmap: selftest passed\n");
+	pmap_nocache_test();
+}
+
+/*
+ * Bring-up measurement: does a mapping without PTE_C bypass the D-cache?
+ * A clean line holds A, then a dirty one B. A non-cached read returns A only
+ * if C is honoured; a cached one returns B.
+ */
+static void
+pmap_nocache_test(void)
+{
+	struct vm_page *pg = uvm_pagealloc(NULL, 0, NULL, 0);
+	const paddr_t pa = VM_PAGE_TO_PHYS(pg);
+	const vaddr_t kva = uvm_km_alloc(kernel_map, PAGE_SIZE, 0,
+	    UVM_KMF_VAONLY | UVM_KMF_WAITVA);
+	volatile uint32_t * const d =
+	    (volatile uint32_t *)(PMAP_DIRECT_VA(pa) + 0x200);
+	volatile uint32_t * const n = (volatile uint32_t *)(kva + 0x200);
+	uint32_t r1, r2, r3;
+
+	pmap_kenter_pa(kva, pa, VM_PROT_READ | VM_PROT_WRITE, PMAP_NOCACHE);
+	*d = 0xaaaa0001;
+	dcache_clean_page(pa);
+	*d = 0xbbbb0002;
+	r1 = *n;
+	*n = 0xcccc0003;
+	r2 = *d;
+	dcache_clean_page(pa);
+	r3 = *n;
+	printf("pmap: nocache test: uncached read %08x (a: honoured, b: not), "
+	    "cached read after uncached write %08x, memory after clean %08x\n",
+	    r1, r2, r3);
+	pmap_kremove(kva, PAGE_SIZE);
+	uvm_km_free(kernel_map, kva, PAGE_SIZE, UVM_KMF_VAONLY);
+	uvm_pagefree(pg);
 }

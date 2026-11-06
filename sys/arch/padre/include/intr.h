@@ -17,6 +17,8 @@ struct trapframe;
 void	padre_intr_init(void);
 void	*padre_intr_establish(int, int, int (*)(void *), void *);
 void	padre_intr_dispatch(struct trapframe *);
+void	padre_stack_check(void);
+void	padre_debug_dump(const char *);
 #endif
 
 #endif /* _PADRE_INTR_H_ */

@@ -54,6 +54,9 @@ void	pmap_bootstrap(vaddr_t);
 void	pmap_selftest(void);
 void	pmap_icache_sync(paddr_t);
 
+#define	PMAP_NEED_PROCWR
+void	pmap_procwr(struct proc *, vaddr_t, size_t);
+
 #endif /* !_LOCORE */
 
 #endif /* _PADRE_PMAP_H_ */

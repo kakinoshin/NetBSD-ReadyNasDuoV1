@@ -119,6 +119,12 @@ pcons_start(struct tty *tp)
 	splx(s);
 }
 
+/*
+ * Bring-up: Ctrl-] prints the state of the interrupted kernel straight from
+ * the receive interrupt, so it works while threads are stuck.
+ */
+#define	PCONS_DEBUG_CHAR	0x1d
+
 static int
 pcons_intr(void *arg)
 {
@@ -130,6 +136,10 @@ pcons_intr(void *arg)
 		const int c = UART_DATA & 0xff;
 
 		UART_STAT = 0xff;
+		if (c == PCONS_DEBUG_CHAR) {
+			padre_debug_dump("console");
+			continue;
+		}
 		if (tp->t_state & TS_ISOPEN)
 			(*tp->t_linesw->l_rint)(c, tp);
 	}

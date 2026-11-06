@@ -1,0 +1,14 @@
+#	$NetBSD$
+#
+# PADRE_USB -- PADRE with its root on the USB disk that tools/mkusbroot.sh writes.
+#
+
+include 	"arch/padre/conf/PADRE"
+
+no options 	MEMORY_DISK_IS_ROOT
+no options 	MEMORY_DISK_ROOT_SIZE
+no options 	MEMORY_DISK_HOOKS
+no pseudo-device	md
+
+no config	netbsd
+config		netbsd	root on sd0c type ffs

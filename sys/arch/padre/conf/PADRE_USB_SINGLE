@@ -1,0 +1,8 @@
+#	$NetBSD$
+#
+# PADRE_USB_SINGLE -- PADRE_USB booting to a single-user shell.
+#
+
+include 	"arch/padre/conf/PADRE_USB"
+
+options 	PADRE_SINGLE_USER

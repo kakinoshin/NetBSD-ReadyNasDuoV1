@@ -182,6 +182,12 @@ _rtld_setup_pltgot(const Obj_Entry *obj)
 	    ((Elf_Addr) &_rtld_bind_start - (Elf_Addr) &obj->pltgot[1]) >> 2;
 	obj->pltgot[2] = NOP;
 	obj->pltgot[3] = (Elf_Addr) obj;
+	/*
+	 * These are instructions: an I-cache that does not see stores, such
+	 * as the one in the Infrant IT3107, runs stale memory without this.
+	 */
+	__asm volatile("iflush %0+0" : : "r" (obj->pltgot));
+	__asm volatile("iflush %0+8" : : "r" (obj->pltgot));
 }
 
 void

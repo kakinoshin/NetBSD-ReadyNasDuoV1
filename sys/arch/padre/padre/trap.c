@@ -25,7 +25,7 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include <sys/syscallvar.h>
 #include <sys/userret.h>
 
-#include <uvm/uvm_extern.h>
+#include <uvm/uvm.h>
 
 #include <machine/frame.h>
 #include <machine/instr.h>
@@ -128,6 +128,35 @@ windows_prepare(struct trapframe *tf)
 	}
 }
 
+/*
+ * Bring-up: interrupts run on the stack of whichever lwp they hit, and the
+ * pcb sits at the bottom of the uarea, so an overflow first wrecks the saved
+ * user windows and then the physical page below the uarea. Reports each new
+ * deepest use and panics before the pcb is reached.
+ */
+void
+padre_stack_check(void)
+{
+	static vsize_t deepest;
+	const vaddr_t ua = uvm_lwp_getuarea(curlwp);
+	const vaddr_t sp = (vaddr_t)__builtin_frame_address(0);
+	vsize_t used;
+
+	if (ua == 0 || sp < ua || sp >= ua + USPACE)
+		return;
+	used = ua + USPACE - sp;
+	if (sp < ua + sizeof(struct pcb) + 512)
+		panic("kernel stack overflow: lwp %p sp %#lx uarea %#lx",
+		    curlwp, sp, ua);
+	if (used > deepest + 256) {
+		deepest = used;
+		printf("stack: new deepest %lu of %u bytes, lwp %d.%d (%s)\n",
+		    (u_long)used, USPACE - (u_int)sizeof(struct pcb),
+		    curlwp->l_proc->p_pid, curlwp->l_lid,
+		    curlwp->l_proc->p_comm);
+	}
+}
+
 void
 trap_userret(struct trapframe *tf)
 {
@@ -158,6 +187,9 @@ trap_panic(u_int tt, struct trapframe *tf, vaddr_t va, uint32_t fsr)
 	panic("trap %#x pc %#x npc %#x va %#lx fsr %#x", tt, tf->tf_pc,
 	    tf->tf_npc, va, fsr);
 }
+
+static void	trap_mapdebug(struct lwp *, vaddr_t, bool);
+static void	trap_regdebug(struct lwp *, struct trapframe *);
 
 static void
 trap_fault(struct lwp *l, u_int tt, struct trapframe *tf, vaddr_t va,
@@ -200,6 +232,8 @@ trap_fault(struct lwp *l, u_int tt, struct trapframe *tf, vaddr_t va,
 		printf("pid %d (%s): segv tt %#x pc %#x npc %#x va %#lx fsr %#x "
 		    "error %d\n", l->l_proc->p_pid, l->l_proc->p_comm, tt,
 		    tf->tf_pc, tf->tf_npc, va, fsr, error);
+		trap_mapdebug(l, tf->tf_pc, false);
+		trap_regdebug(l, tf);
 		trap_signal(l, SIGSEGV, SEGV_MAPERR, va, tt);
 	}
 }
@@ -218,6 +252,63 @@ trap_reg(struct lwp *l, struct trapframe *tf, u_int r)
 	if (r < 24)
 		return pcb->pcb_rw[0].rw_local[r - 16];
 	return pcb->pcb_rw[0].rw_in[r - 24];
+}
+
+/* Bring-up: the user registers at a fatal trap. */
+static void
+trap_regdebug(struct lwp *l, struct trapframe *tf)
+{
+	struct pcb * const pcb = lwp_getpcb(l);
+	const struct rwindow * const rw = &pcb->pcb_rw[0];
+	u_int i;
+
+	printf("  nsaved %d psr %#x y %#x\n", pcb->pcb_nsaved, tf->tf_psr,
+	    tf->tf_y);
+	for (i = 0; i < 8; i++)
+		printf("  g%u %08x o%u %08x l%u %08x i%u %08x\n",
+		    i, tf->tf_global[i], i, tf->tf_out[i],
+		    i, rw->rw_local[i], i, rw->rw_in[i]);
+}
+
+/* Bring-up: which mapping holds a failing instruction. */
+static void
+trap_mapdebug(struct lwp *l, vaddr_t pc, bool dump)
+{
+	struct vm_map * const map = &l->l_proc->p_vmspace->vm_map;
+	struct vm_map_entry *e;
+	paddr_t pa = 0;
+
+	vm_map_lock_read(map);
+	if (!uvm_map_lookup_entry(map, pc, &e)) {
+		vm_map_unlock_read(map);
+		printf("  no map entry\n");
+		return;
+	}
+	(void)pmap_extract(map->pmap, pc, &pa);
+	printf("  entry %#lx-%#lx off %#llx prot %x/%x obj %p%s amap %p pa %#lx\n",
+	    e->start, e->end, (unsigned long long)e->offset, e->protection,
+	    e->max_protection, e->object.uvm_obj,
+	    (e->object.uvm_obj != NULL &&
+	    UVM_OBJ_IS_VNODE(e->object.uvm_obj)) ? " vnode" : "",
+	    e->aref.ar_amap, pa);
+	if (dump && pa != 0) {
+		struct vm_page * const pg = PHYS_TO_VM_PAGE(pa);
+		const uint32_t *w = (const uint32_t *)
+		    PMAP_DIRECT_VA(trunc_page(pa));
+		u_int i;
+
+		/* A wrong page and a corrupted page look the same from user. */
+		if (pg != NULL)
+			printf("  page obj %p off %#llx want %#llx flags %#x\n",
+			    pg->uobject, (unsigned long long)pg->offset,
+			    (unsigned long long)(e->offset +
+			    trunc_page(pc - e->start)), pg->flags);
+		for (i = 0; i < PAGE_SIZE / 4; i += 8)
+			printf("  %03x: %08x %08x %08x %08x %08x %08x %08x %08x\n",
+			    i * 4, w[i], w[i + 1], w[i + 2], w[i + 3],
+			    w[i + 4], w[i + 5], w[i + 6], w[i + 7]);
+	}
+	vm_map_unlock_read(map);
 }
 
 /* flush is not implemented: decode it from the illegal instruction trap. */
@@ -341,6 +432,7 @@ trap(u_int tt, struct trapframe *tf)
 	struct pcb * const pcb = lwp_getpcb(l);
 
 	setpsr((getpsr() & ~PSR_PIL) | (tf->tf_psr & PSR_PIL));
+	padre_stack_check();
 
 	if ((tf->tf_psr & PSR_PS) != 0) {
 		switch (tt) {
@@ -372,8 +464,16 @@ trap(u_int tt, struct trapframe *tf)
 		trap_fault(l, tt, tf, tf->tf_pc, ifsr);
 		break;
 	case T_ILLINST:
-		if (!trap_flush(l, tf))
+		if (!trap_flush(l, tf)) {
+			int insn = 0;
+
+			(void)ufetch_int((void *)tf->tf_pc, (u_int *)&insn);
+			printf("pid %d (%s): illegal insn %08x at pc %#x npc %#x\n",
+			    l->l_proc->p_pid, l->l_proc->p_comm, insn, tf->tf_pc,
+			    tf->tf_npc);
+			trap_mapdebug(l, tf->tf_pc, true);
 			trap_signal(l, SIGILL, ILL_ILLOPC, tf->tf_pc, tt);
+		}
 		break;
 	case T_FPDISABLED:
 		fpu_emulate_user(l, tf);

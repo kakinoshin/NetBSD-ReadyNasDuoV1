@@ -668,7 +668,77 @@ bad_trap:
 	 nop
 	TX('\r')
 	TX('\n')
-1:	b	1b
+
+	/*
+	 * Bring-up backtrace: "BT <sp> <ret> <i0>" per frame, from the
+	 * registers while the next window is valid, then from the stack.
+	 */
+	mov	16, %g6
+2:	TX('B')
+	TX('T')
+	TX(' ')
+	mov	%i6, %l5
+	call	hex32
+	 nop
+	TX(' ')
+	mov	%i7, %l5
+	call	hex32
+	 nop
+	TX(' ')
+	mov	%i0, %l5
+	call	hex32
+	 nop
+	TX('\r')
+	TX('\n')
+	subcc	%g6, 1, %g6
+	be	9f
+	 nop
+	rd	%psr, %g2
+	and	%g2, PSR_CWP, %g2
+	add	%g2, 1, %g2
+	and	%g2, NWINDOWS - 1, %g2
+	rd	%wim, %g3
+	srl	%g3, %g2, %g3
+	btst	1, %g3
+	bne	3f
+	 nop
+	restore
+	set	UART0, %l3
+	b	2b
+	 nop
+
+	/* The next window is on the stack; follow it while in the direct map. */
+3:	mov	%i6, %g4
+4:	set	0x80000000, %g2
+	cmp	%g4, %g2
+	blu	9f
+	 set	0xc0000000, %g2
+	cmp	%g4, %g2
+	bgeu	9f
+	 btst	7, %g4
+	bne	9f
+	 nop
+	TX('b')
+	TX('t')
+	TX(' ')
+	mov	%g4, %l5
+	call	hex32
+	 nop
+	TX(' ')
+	ld	[%g4 + 60], %l5
+	call	hex32
+	 nop
+	TX(' ')
+	ld	[%g4 + 32], %l5
+	call	hex32
+	 nop
+	TX('\r')
+	TX('\n')
+	ld	[%g4 + 56], %g4
+	subcc	%g6, 1, %g6
+	bne	4b
+	 nop
+9:	b	9b
 	 nop
 
 /* Print %l5 in hex. %o7 is this window's scratch. */
