@@ -13,3 +13,4 @@ device-major	sd		char 6	 block 2	sd
 device-major	scsibus		char 7			scsibus
 device-major	usb		char 8			usb
 device-major	ugen		char 9			ugen
+device-major	bpf		char 10			bpfilter

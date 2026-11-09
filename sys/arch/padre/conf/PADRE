@@ -16,12 +16,18 @@ options 	MEMORY_DISK_IS_ROOT
 options 	MEMORY_DISK_ROOT_SIZE=32768
 
 file-system	FFS
+file-system	NFS
+
+options 	INET
 
 config		netbsd	root on ? type ?
 
 mainbus0	at root
 
 pcic0		at mainbus0
+gm0		at mainbus0
+makphy*		at mii? phy ?
+ukphy*		at mii? phy ?
 pci0		at pcic0 bus ?
 uhci*		at pci? dev ? function ?
 ehci*		at pci? dev ? function ?
@@ -35,3 +41,5 @@ sd*		at scsibus? target ? lun ?
 
 pseudo-device	md
 pseudo-device	pcons
+pseudo-device	loop
+pseudo-device	bpfilter

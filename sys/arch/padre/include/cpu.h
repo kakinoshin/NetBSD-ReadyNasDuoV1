@@ -72,6 +72,9 @@ void	windows_flush(struct lwp *);
 void	*cpu_uarea_alloc(bool);
 bool	cpu_uarea_free(void *);
 
+void	gmac_quiesce(void);
+void	gmac_report(void);
+
 #endif /* _KERNEL */
 
 #endif /* _PADRE_CPU_H_ */

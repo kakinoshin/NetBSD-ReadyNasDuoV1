@@ -20,6 +20,10 @@ device	pcic: pcibus
 attach	pcic at mainbus
 file	arch/padre/padre/pcic.c		pcic
 
+device	gm: ether, ifnet, arp, mii
+attach	gm at mainbus
+file	arch/padre/padre/if_gm.c	gm
+
 file	arch/padre/padre/autoconf.c
 file	arch/padre/padre/clock.c
 file	arch/padre/padre/console.c
@@ -33,6 +37,7 @@ file	arch/padre/padre/process_machdep.c
 file	arch/padre/padre/stubs.c
 file	arch/padre/padre/trap.c
 file	arch/padre/padre/fpu_emul.c
+file	arch/padre/padre/gmac.c
 
 # The core has no FPU: every FP instruction is emulated.
 file	arch/sparc/fpu/fpu.c

@@ -42,6 +42,7 @@ padre_bootstrap(void)
 	lwp0.l_md.md_tf = (struct trapframe *)
 	    (lwp0uarea + USPACE - sizeof(struct trapframe));
 	lwp0.l_cpu = ci;
+	gmac_quiesce();
 #ifdef PADRE_SINGLE_USER
 	boothowto |= RB_SINGLE;
 #endif
@@ -69,6 +70,7 @@ cpu_startup(void)
 
 	cpu_setmodel("Infrant IT3107");
 	banner();
+	gmac_report();
 	phys_map = uvm_km_suballoc(kernel_map, &minaddr, &maxaddr,
 	    VM_PHYS_SIZE, 0, false, NULL);
 }
