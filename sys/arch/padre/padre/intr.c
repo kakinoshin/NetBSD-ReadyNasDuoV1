@@ -48,13 +48,21 @@ static uint32_t ipl_mask_h[NIPL], ipl_mask_l[NIPL];
 u_int padre_intr_count[NIRQ];	/* bring-up statistics */
 struct trapframe *padre_intr_tf;	/* the latest interrupted frame */
 
+/*
+ * Linux writes the masks and the bug 505 word with interrupts off. Without
+ * that, the timer line once stopped being taken under NFS load until another
+ * interrupt rewrote the masks; this is the suspected cause.
+ */
 static inline void
 intc_setmask(int ipl)
 {
+	const int psr = getpsr();
 
+	setpsr(psr | PSR_PIL);
 	INTC_MASK_H = ipl_mask_h[ipl];
 	INTC_MASK_L = ipl_mask_l[ipl];
 	INTC_SYNC = 0;
+	setpsr(psr);
 }
 
 /* Linux may leave lines enabled and pending when it hands over the CPU. */
@@ -199,6 +207,6 @@ padre_debug_dump(const char *why)
 	if (tf != NULL)
 		printf("debug: interrupted pc %#x npc %#x psr %#x o7 %#x\n",
 		    tf->tf_pc, tf->tf_npc, tf->tf_psr, tf->tf_out[7]);
-	printf("debug: irq 8 %u, 27 %u, 46 %u\n", padre_intr_count[8],
-	    padre_intr_count[27], padre_intr_count[46]);
+	printf("debug: irq 8 %u, 27 %u, 41 %u, 46 %u\n", padre_intr_count[8],
+	    padre_intr_count[27], padre_intr_count[41], padre_intr_count[46]);
 }
