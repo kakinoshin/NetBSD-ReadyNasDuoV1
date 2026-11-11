@@ -26,6 +26,9 @@ mainbus0	at root
 
 pcic0		at mainbus0
 gm0		at mainbus0
+paide0		at mainbus0
+atabus*		at ata?
+wd*		at atabus? drive ?
 makphy*		at mii? phy ?
 ukphy*		at mii? phy ?
 pci0		at pcic0 bus ?

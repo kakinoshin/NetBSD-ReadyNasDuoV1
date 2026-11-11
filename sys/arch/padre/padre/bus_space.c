@@ -62,13 +62,18 @@ T							\
 bus_space_read_##n(bus_space_tag_t t, bus_space_handle_t h,		\
     bus_size_t o)							\
 {									\
+	if (sizeof(T) < 4 && (t->pbs_flags & PBS_REG32))		\
+		return *(volatile uint32_t *)(h + o);			\
 	return *(volatile T *)(h + o);					\
 }									\
 void							\
 bus_space_write_##n(bus_space_tag_t t, bus_space_handle_t h,		\
     bus_size_t o, T v)							\
 {									\
-	*(volatile T *)(h + o) = v;					\
+	if (sizeof(T) < 4 && (t->pbs_flags & PBS_REG32))		\
+		*(volatile uint32_t *)(h + o) = v;			\
+	else								\
+		*(volatile T *)(h + o) = v;				\
 }									\
 void							\
 bus_space_read_multi_##n(bus_space_tag_t t, bus_space_handle_t h,	\

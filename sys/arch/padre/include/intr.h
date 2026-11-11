@@ -19,6 +19,9 @@ void	*padre_intr_establish(int, int, int (*)(void *), void *);
 void	padre_intr_dispatch(struct trapframe *);
 void	padre_stack_check(void);
 void	padre_debug_dump(const char *);
+void	pcons_watch(void);
+
+extern u_int padre_intr_count[NIRQ];
 #endif
 
 #endif /* _PADRE_INTR_H_ */

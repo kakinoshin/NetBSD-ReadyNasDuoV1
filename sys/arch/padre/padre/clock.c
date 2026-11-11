@@ -35,6 +35,7 @@ clockintr(void *arg)
 	const uint64_t count = curcpu()->ci_data.cpu_nsyscall;
 
 	hardclock(&cf);
+	pcons_watch();
 
 	/* Bring-up watchdog: report once when no system call ran for 30 s. */
 	if (count != lastcount) {

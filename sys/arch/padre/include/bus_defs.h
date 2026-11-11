@@ -27,6 +27,8 @@ typedef vaddr_t	bus_space_handle_t;
 
 struct padre_bus_space {
 	vaddr_t		pbs_base;
+	int		pbs_flags;
+#define	PBS_REG32	0x01	/* 1- and 2-byte registers take 32-bit accesses */
 };
 
 #define	__BUS_SPACE_HAS_STREAM_METHODS	1

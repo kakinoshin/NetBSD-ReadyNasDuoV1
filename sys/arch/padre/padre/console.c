@@ -57,8 +57,10 @@ padre_cnpollc(dev_t dev, int on)
 void	pconsattach(int);
 
 static struct tty *pcons_tty;
+static void *pcons_si;
 
 static int	pcons_intr(void *);
+static void	pcons_rescue(void *);
 static void	pcons_start(struct tty *);
 static int	pcons_param(struct tty *, struct termios *);
 
@@ -91,8 +93,46 @@ pconsattach(int n)
 	pcons_tty->t_oproc = pcons_start;
 	pcons_tty->t_param = pcons_param;
 	UART_STAT = 0xff;
+	pcons_si = softint_establish(SOFTINT_SERIAL, pcons_rescue, pcons_tty);
 	padre_intr_establish(IRQ_UART0, IPL_TTY, pcons_intr, pcons_tty);
 	UART_CTRL |= UART_CTRL_RI;
+}
+
+/*
+ * The receive interrupt stops for good after an overrun, which a burst of
+ * input while the IPL is held up (PIO disk transfers) causes; Linux on this
+ * UART did the same. From the clock: a character that has waited two ticks
+ * with no receive interrupt in between is collected by a soft interrupt.
+ */
+void
+pcons_watch(void)
+{
+	static u_int last;
+	static int waited;
+
+	if (pcons_si == NULL || (UART_STAT & UART_STAT_DR) == 0 ||
+	    padre_intr_count[IRQ_UART0] != last) {
+		last = padre_intr_count[IRQ_UART0];
+		waited = 0;
+		return;
+	}
+	if (++waited == 2)
+		softint_schedule(pcons_si);
+}
+
+static void
+pcons_rescue(void *arg)
+{
+	static bool reported;
+	const int s = spltty();
+
+	if (!reported) {
+		reported = true;
+		printf("pcons: receive interrupt lost, stat %#x ctrl %#x\n",
+		    UART_STAT, UART_CTRL);
+	}
+	pcons_intr(arg);
+	splx(s);
 }
 
 static int

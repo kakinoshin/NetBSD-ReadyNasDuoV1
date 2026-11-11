@@ -14,3 +14,4 @@ device-major	scsibus		char 7			scsibus
 device-major	usb		char 8			usb
 device-major	ugen		char 9			ugen
 device-major	bpf		char 10			bpfilter
+device-major	wd		char 11 block 3		wd

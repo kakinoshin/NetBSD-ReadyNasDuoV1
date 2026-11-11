@@ -24,6 +24,10 @@ device	gm: ether, ifnet, arp, mii
 attach	gm at mainbus
 file	arch/padre/padre/if_gm.c	gm
 
+device	paide: ata, wdc_common
+attach	paide at mainbus
+file	arch/padre/padre/padreide.c	paide
+
 file	arch/padre/padre/autoconf.c
 file	arch/padre/padre/clock.c
 file	arch/padre/padre/console.c
