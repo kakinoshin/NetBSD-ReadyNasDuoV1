@@ -15,6 +15,7 @@ no options 	MEMORY_DISK_HOOKS
 no pseudo-device	md
 
 options 	NFS_BOOT_TCP	# servers no longer offer NFS over UDP
+options 	PADRE_VERBOSE	# XXX bring-up: wd transfer modes
 options 	NFS_BOOT_BOOTSTATIC
 options 	NFS_BOOTSTATIC_MYIP="\"192.168.0.104\""
 options 	NFS_BOOTSTATIC_MASK="\"255.255.255.0\""

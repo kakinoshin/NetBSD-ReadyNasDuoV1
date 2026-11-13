@@ -46,6 +46,9 @@ padre_bootstrap(void)
 #ifdef PADRE_SINGLE_USER
 	boothowto |= RB_SINGLE;
 #endif
+#ifdef PADRE_VERBOSE
+	boothowto |= AB_VERBOSE;
+#endif
 
 	/* Progress marks: printf is not usable until main() runs consinit(). */
 	consinit();

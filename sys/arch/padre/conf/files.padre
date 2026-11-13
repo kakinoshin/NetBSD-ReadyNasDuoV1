@@ -10,7 +10,7 @@ maxusers	2 8 64
 defflag	opt_sparc_arch.h	SUN4 SUN4C SUN4M SUN4D SUN4U MSIIEP
 
 # padre_go.ko passes no boot flags, so single-user boot is a kernel option.
-defflag	opt_padre.h		PADRE_SINGLE_USER
+defflag	opt_padre.h		PADRE_SINGLE_USER PADRE_VERBOSE
 
 device	mainbus {}
 attach	mainbus at root
@@ -24,7 +24,7 @@ device	gm: ether, ifnet, arp, mii
 attach	gm at mainbus
 file	arch/padre/padre/if_gm.c	gm
 
-device	paide: ata, wdc_common
+device	paide: ata, ata_dma, ata_udma, wdc_common
 attach	paide at mainbus
 file	arch/padre/padre/padreide.c	paide
 
