@@ -5,10 +5,11 @@
  *
  * Channel n's task file is at 0x60007000 + n * 0x100, register r in the low
  * byte of the word at +4 * r, and the alternate status at +0x38. Writes to
- * the device control register are dropped, so there is no SRST and no nIEN,
- * and the channel is polled. Resets are a COMRESET through the SATA control
- * register instead, which also clears whatever command RAIDiator left
- * running (an X-RAID resync is often under way when the kernel takes over). PIO data moves a word at a time through +0,
+ * the device control register are dropped, so there is no SRST and no nIEN.
+ * Resets are a COMRESET through the SATA control register instead, which
+ * also clears whatever command RAIDiator left running (an X-RAID resync is
+ * often under way when the kernel takes over). PIO data moves a word at a
+ * time through +0,
  * after bit 4 (data ready) or bit 5 (room) of +0x84. The low half of the
  * word holds byte 0 in bits 15:8, so storing it gives disk order, as wdc
  * expects of a stream access; IDENTIFY (ATA_DRIVE_NOSTREAM) wants the ATA
@@ -21,9 +22,14 @@
  * and then writes the task file. For a command outside X-RAID it first sets
  * the channel's DJ register to 0x90, which takes the channel off the RAID
  * engine; RAIDiator may leave a channel on it in the middle of a resync. The
- * driver does the same from the CPU and leaves LP alone. The engine takes one physically contiguous buffer, so
- * transfers bounce through one per channel. Completion is polled: the engine
- * is idle and the drive is not busy.
+ * driver does the same from the CPU and leaves LP alone. The engine takes
+ * one physically contiguous buffer, so transfers bounce through one per
+ * channel. A transfer is done when the engine is idle and the drive is not
+ * busy.
+ *
+ * Each channel has its own interrupt line, 32 + n. Under RAIDiator LP
+ * reports command completion and the line only carries link events, but
+ * with commands issued from the CPU it is raised for each of them.
  */
 
 #include <sys/cdefs.h>
@@ -34,6 +40,8 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include <sys/bus.h>
 #include <sys/device.h>
 #include <sys/bswap.h>
+#include <sys/callout.h>
+#include <sys/intr.h>
 
 #include <uvm/uvm_extern.h>
 
@@ -44,10 +52,14 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #define	PAIDE_NCHANNELS	2	/* the Duo's two bays */
 #define	PAIDE_BASE(n)	(0x60007000 + (n) * 0x100)
 #define	PAIDE_ALTSTAT	0x38
-#define	PAIDE_PIOSTAT	0x84
+#define	PAIDE_PIOSTAT	0x84	/* also the channel's interrupt causes */
+#define	  PAIDE_PIOSTAT_EVENT	0x07	/* power management, hot plug */
+#define	  PAIDE_PIOSTAT_INTRQ	0x08	/* the drive's interrupt */
 #define	  PAIDE_PIOSTAT_RDY	0x10	/* a data word can be read */
 #define	  PAIDE_PIOSTAT_ROOM	0x20	/* a data word can be written */
 #define	PAIDE_SPIN	100000
+#define	PAIDE_DMA_DRAIN	1000	/* us for the engine after the drive */
+#define	PAIDE_INTR_ROUNDS	8
 #define	PAIDE_SETTLE	60	/* commands after a reset, 50 ms apart */
 #define	PAIDE_SSTATUS	0x40
 #define	  SSTATUS_UP		0x113	/* device present, Gen1 link, active */
@@ -58,6 +70,7 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #define	  PHY0_INTR_EN		0x01c00000	/* padre_set_sata_intr */
 #define	  PHY0_INTR_ACK		0x1c000000
 #define	PAIDE_PHY1	0x88
+#define	PAIDE_IRQ(n)	(32 + (n))
 
 #define	PAIDE_MCDMA	(0x60002800 + 4 * 0x10)	/* MC DMA channel of SATA 0 */
 #define	PAIDE_MCDMA_CH(n)	((n) * 0x10)
@@ -69,6 +82,18 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #define	MCDMA_LEN	0xc
 #define	  MCDMA_LEN_WRT		0x01000000	/* device to memory */
 #define	  MCDMA_LEN_EOP		0x02000000
+#define	  MCDMA_LEN_COUNT	0x00ffffff	/* counts down to 0 */
+
+/*
+ * LP, the list processor RAIDiator drives the channels through. Its firmware
+ * only waits for events, and takes the ones enabled in LP_EVENT_EN: at rest
+ * just the channel trigger; it adds a channel's own events while it runs a
+ * command there. So it stays idle unless a channel is triggered, and the
+ * channel enables are cleared to refuse that. LP_EVENT_EN itself ignores
+ * writes from this CPU.
+ */
+#define	PAIDE_LP_CH_ENABLE	0x60001004
+#define	PAIDE_LP_BUSY		0x60001008
 
 #define	PAIDE_DJ_CH(n)	(0x60005008 + (n) * 4)	/* DJ routing of SATA n */
 #define	  DJ_CH_DIRECT		0x90
@@ -93,6 +118,7 @@ struct paide_softc {
 	bus_space_handle_t	sc_djh;
 	bus_dma_tag_t		sc_dmat;
 	struct paide_dma	sc_dma[PAIDE_NCHANNELS];
+	callout_t		sc_lpwatch;	/* XXX bring-up */
 };
 
 static const struct padre_bus_space paide_bst = {
@@ -110,6 +136,9 @@ static void	paide_set_modes(struct ata_channel *);
 static int	paide_dma_init(void *, int, int, void *, size_t, int);
 static void	paide_dma_start(void *, int, int);
 static int	paide_dma_finish(void *, int, int, int);
+static int	paide_intr(void *);
+static void	paide_chan_intr(struct paide_softc *, int);
+static void	paide_lp_watch(void *);
 
 CFATTACH_DECL_NEW(paide, sizeof(struct paide_softc),
     paide_match, paide_attach, NULL, NULL);
@@ -151,11 +180,15 @@ paide_attach(device_t parent, device_t self, void *aux)
 			    *(volatile uint32_t *)(PAIDE_BASE(i) + PAIDE_PHY0),
 			    *(volatile uint32_t *)(PAIDE_BASE(i) + PAIDE_PHY1),
 			    *(volatile uint32_t *)(PAIDE_BASE(i) + PAIDE_SSTATUS),
-			    *(volatile uint32_t *)0x60001008);
+			    *(volatile uint32_t *)PAIDE_LP_BUSY);
+	*(volatile uint32_t *)PAIDE_LP_CH_ENABLE = 0;
+	callout_init(&sc->sc_lpwatch, 0);
+	callout_setfunc(&sc->sc_lpwatch, paide_lp_watch, sc);
+	paide_lp_watch(sc);
 
 	sc->sc_wdc.sc_atac.atac_dev = self;
 	sc->sc_wdc.regs = sc->sc_regs;
-	sc->sc_wdc.sc_atac.atac_cap = ATAC_CAP_DATA16 | ATAC_CAP_NOIRQ;
+	sc->sc_wdc.sc_atac.atac_cap = ATAC_CAP_DATA16;
 	sc->sc_wdc.sc_atac.atac_pio_cap = 4;
 	sc->sc_wdc.sc_atac.atac_nchannels = PAIDE_NCHANNELS;
 	sc->sc_wdc.sc_atac.atac_channels = sc->sc_chp;
@@ -189,8 +222,12 @@ paide_attach(device_t parent, device_t self, void *aux)
 		wdc_init_shadow_regs(wdr);
 		bus_space_subregion(wdr->cmd_iot, wdr->cmd_baseioh,
 		    PAIDE_ALTSTAT, 4, &wdr->ctl_ioh);
-		wdcattach(ch);
 	}
+	/* The handler looks at both channels, so they are all set up first. */
+	for (i = 0; i < PAIDE_NCHANNELS; i++)
+		padre_intr_establish(PAIDE_IRQ(i), IPL_BIO, paide_intr, sc);
+	for (i = 0; i < PAIDE_NCHANNELS; i++)
+		wdcattach(sc->sc_chp[i]);
 }
 
 /*
@@ -217,11 +254,11 @@ paide_reset(struct ata_channel *chp, int poll)
 	delay(5000);
 	/*
 	 * Keep the other bits RAIDiator set there, with the channel's
-	 * interrupts off as padre_set_sata_intr(ch, 0) leaves them, so that
-	 * nothing but the polling driver takes a completion.
+	 * interrupts on as padre_set_sata_intr(ch, 1) leaves them. Without
+	 * the rest, Ultra-DMA mode setting failed.
 	 */
 	bus_space_write_4(wdr->cmd_iot, wdr->cmd_baseioh, PAIDE_PHY0,
-	    (phy0 | PHY0_INTR_ACK) & ~PHY0_INTR_EN);
+	    phy0 | PHY0_INTR_ACK | PHY0_INTR_EN);
 	for (i = 0; i < 1000; i++) {
 		if (bus_space_read_4(wdr->cmd_iot, wdr->cmd_baseioh,
 		    PAIDE_SSTATUS) == SSTATUS_UP)
@@ -263,6 +300,113 @@ paide_reset(struct ata_channel *chp, int poll)
 			delay(1000);
 		}
 	}
+}
+
+/*
+ * The channel's line, as padre_sata_intr takes it: +0x84 shows a pending
+ * drive interrupt in bit 3, hot plug in bits 1 and 2 and power management in
+ * bit 0, and setting the enable and acknowledge bits in +0x80 rearms it.
+ * The line is rearmed before wdc runs, after a status read has dropped the
+ * drive's interrupt: wdc may start the next command, and an acknowledge
+ * after that lost its completion. The drive can raise its interrupt before
+ * the MC engine has drained, so a DMA command waits briefly for the engine.
+ *
+ * A completion on one channel while the other's handler ran was lost, so
+ * both lines share a handler that goes on while either channel shows a
+ * drive interrupt.
+ */
+/*
+ * XXX bring-up: report every change in LP's registers and in the counters
+ * its firmware keeps at the start of S3 SRAM, to see whether LP acts on
+ * anything while NetBSD drives the channels.
+ */
+#define	LPW_NREGS	(12 + 8 + 2 + 48)
+static uint32_t	paide_lpw_last[LPW_NREGS];
+static bool	paide_lpw_valid;
+
+static paddr_t
+paide_lpw_addr(int i)
+{
+
+	if (i < 12)		/* skip 0x30-0x3c: LP's event fetch */
+		return 0x60001000 + i * 4;
+	if ((i -= 12) < 8)
+		return 0x60001100 + i * 4;
+	if ((i -= 8) < 2)
+		return 0x60001200 + i * 4;
+	return 0x30000030 + (i - 2) * 4;
+}
+
+static void
+paide_lp_watch(void *arg)
+{
+	struct paide_softc * const sc = arg;
+	paddr_t pa;
+	uint32_t v;
+	int i;
+
+	for (i = 0; i < LPW_NREGS; i++) {
+		pa = paide_lpw_addr(i);
+		v = pa >= 0x60000000 ? *(volatile uint32_t *)pa :
+		    *(volatile uint32_t *)PMAP_DIRECT_VA(pa);
+		if (!paide_lpw_valid || v != paide_lpw_last[i])
+			printf("lpw %#lx: %#x -> %#x\n", (u_long)pa,
+			    paide_lpw_last[i], v);
+		paide_lpw_last[i] = v;
+	}
+	paide_lpw_valid = true;
+	callout_schedule(&sc->sc_lpwatch, hz);
+}
+
+static int
+paide_intr(void *arg)
+{
+	struct paide_softc * const sc = arg;
+	bool more;
+	int i, n;
+
+	for (n = 0; n < PAIDE_NCHANNELS; n++)
+		paide_chan_intr(sc, n);
+	for (i = 0; i < PAIDE_INTR_ROUNDS; i++) {
+		more = false;
+		for (n = 0; n < PAIDE_NCHANNELS; n++)
+			if (bus_space_read_4(&paide_bst,
+			    sc->sc_regs[n].cmd_baseioh, PAIDE_PIOSTAT) &
+			    PAIDE_PIOSTAT_INTRQ) {
+				paide_chan_intr(sc, n);
+				more = true;
+			}
+		if (!more)
+			break;
+	}
+	return 1;
+}
+
+static void
+paide_chan_intr(struct paide_softc *sc, int n)
+{
+	struct ata_channel * const chp = sc->sc_chp[n];
+	struct wdc_regs * const wdr = &sc->sc_regs[n];
+	uint32_t ev;
+	int i;
+
+	ev = bus_space_read_4(wdr->cmd_iot, wdr->cmd_baseioh, PAIDE_PIOSTAT);
+	if (ev & PAIDE_PIOSTAT_EVENT)
+		aprint_verbose_dev(chp->ch_atac->atac_dev,
+		    "channel %d: link event %#x\n", n, ev);
+	if (chp->ch_flags & ATACH_DMA_WAIT)
+		for (i = 0; i < PAIDE_DMA_DRAIN; i++) {
+			if ((bus_space_read_4(&paide_bst, sc->sc_mch,
+			    PAIDE_MCDMA_CH(n) + MCDMA_FFCTRL) &
+			    MCDMA_FFCTRL_ACT) == 0)
+				break;
+			delay(1);
+		}
+	(void)bus_space_read_1(wdr->cmd_iot, wdr->cmd_iohs[wd_status], 0);
+	bus_space_write_4(wdr->cmd_iot, wdr->cmd_baseioh, PAIDE_PHY0,
+	    bus_space_read_4(wdr->cmd_iot, wdr->cmd_baseioh, PAIDE_PHY0) |
+	    PHY0_INTR_ACK | PHY0_INTR_EN);
+	(void)wdcintr(chp);
 }
 
 static int
@@ -413,13 +557,21 @@ paide_dma_finish(void *v, int channel, int drive, int force)
 	struct paide_dma * const pd = &sc->sc_dma[channel];
 	struct wdc_regs * const wdr = &sc->sc_regs[channel];
 
+	const bool done = (bus_space_read_4(&paide_bst, sc->sc_mch,
+	    PAIDE_MCDMA_CH(channel) + MCDMA_FFCTRL) & MCDMA_FFCTRL_ACT) == 0 &&
+	    (bus_space_read_4(&paide_bst, sc->sc_mch,
+	    PAIDE_MCDMA_CH(channel) + MCDMA_LEN) & MCDMA_LEN_COUNT) == 0 &&
+	    (bus_space_read_1(wdr->ctl_iot, wdr->ctl_ioh, 0) & WDCS_BSY) == 0;
+	int rv = 0;
+
 	if (force == WDC_DMAEND_END) {
-		if ((bus_space_read_4(&paide_bst, sc->sc_mch,
-		    PAIDE_MCDMA_CH(channel) + MCDMA_FFCTRL) &
-		    MCDMA_FFCTRL_ACT) != 0 ||
-		    (bus_space_read_1(wdr->ctl_iot, wdr->ctl_ioh, 0) &
-		    WDCS_BSY) != 0)
+		if (!done)
 			return WDC_DMAST_NOIRQ;
+	} else if (done) {
+		/* A lost interrupt: the transfer did finish. */
+		aprint_error_dev(sc->sc_wdc.sc_atac.atac_dev,
+		    "channel %d: DMA done without an interrupt\n", channel);
+		force = WDC_DMAEND_END;
 	} else {
 		/* XXX bring-up: the state of a transfer that did not finish */
 		aprint_error_dev(sc->sc_wdc.sc_atac.atac_dev,
@@ -437,6 +589,7 @@ paide_dma_finish(void *v, int channel, int drive, int force)
 		    bus_space_read_4(wdr->cmd_iot, wdr->cmd_baseioh, 0x40),
 		    bus_space_read_4(wdr->cmd_iot, wdr->cmd_baseioh, 0x44));
 		paide_dma_reset(sc, channel);
+		rv = WDC_DMAST_ERR;
 	}
 	if (pd->pd_read) {
 		bus_dmamap_sync(sc->sc_dmat, pd->pd_map, 0, pd->pd_len,
@@ -444,5 +597,5 @@ paide_dma_finish(void *v, int channel, int drive, int force)
 		if (force == WDC_DMAEND_END)
 			memcpy(pd->pd_buf, pd->pd_kva, pd->pd_len);
 	}
-	return 0;
+	return rv;
 }
